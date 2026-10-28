@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 33% 96%;
+    --foreground: 30 12% 12%;
+    --card: 40 30% 99%;
+    --card-foreground: 30 12% 12%;
+    --popover: 40 30% 99%;
+    --popover-foreground: 30 12% 12%;
+    --primary: 18 83% 42%;
+    --primary-foreground: 42 40% 97%;
+    --secondary: 38 24% 90%;
+    --secondary-foreground: 30 14% 20%;
+    --muted: 38 20% 91%;
+    --muted-foreground: 32 8% 44%;
+    --accent: 38 26% 89%;
+    --accent-foreground: 30 14% 18%;
+    --destructive: 4 72% 46%;
+    --destructive-foreground: 42 40% 97%;
+    --border: 36 16% 84%;
+    --input: 36 16% 80%;
+    --ring: 18 83% 42%;
+    --radius: 0.625rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* design-engineering motion tokens */
+    --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      'Inter',
+      -apple-system,
+      'Segoe UI',
+      'PingFang SC',
+      'Hiragino Sans GB',
+      'Microsoft YaHei',
+      sans-serif;
+  }
+  .font-word {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+      'Times New Roman', serif;
+    font-feature-settings: 'liga' 1, 'kern' 1;
+  }
+}
+
+@layer components {
+  /* Buttons must feel responsive — instant press feedback. */
+  .pressable {
+    transition: transform 160ms var(--ease-out-strong);
+    will-change: transform;
+  }
+  .pressable:active {
+    transform: scale(0.97);
+  }
+
+  .lift {
+    transition:
+      transform 200ms var(--ease-out-strong),
+      box-shadow 200ms var(--ease-out-strong),
+      border-color 200ms ease;
+  }
+
+  /* Staggered list entry — @starting-style so the resting state is always
+     fully visible; if entry animation is unsupported, content just appears. */
+  .stagger-in {
+    transition:
+      opacity 300ms var(--ease-out-strong),
+      transform 300ms var(--ease-out-strong);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  /* Quiz option reveal */
+  .option-in {
+    transition:
+      opacity 240ms var(--ease-out-strong),
+      transform 240ms var(--ease-out-strong);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+  }
+
+  /* Feedback flash on the quiz card — box-shadow only, never touches opacity */
+  .flash-correct {
+    animation: flash-correct 450ms ease;
+  }
+  .flash-wrong {
+    animation: flash-wrong 450ms ease;
+  }
+
+  /* Temporary ring to locate a duplicate word's group card */
+  .group-flash {
+    animation: group-flash 3s ease;
+  }
+
+  /* Onboarding tour — card pops in; each step crossfades on navigation */
+  .tour-pop {
+    transition:
+      opacity 260ms var(--ease-out-strong),
+      transform 260ms var(--ease-out-strong);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(10px) scale(0.97);
+    }
+  }
+  .tour-step {
+    animation: tour-step 220ms var(--ease-out-strong);
+  }
+  @keyframes tour-step {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@keyframes flash-correct {
+  0% {
+    box-shadow: 0 0 0 0 hsl(142 60% 40% / 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 18px hsl(142 60% 40% / 0);
+  }
+}
+
+@keyframes flash-wrong {
+  0% {
+    box-shadow: 0 0 0 0 hsl(4 72% 46% / 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 18px hsl(4 72% 46% / 0);
+  }
+}
+
+@keyframes group-flash {
+  0%,
+  60% {
+    box-shadow:
+      0 0 0 3px hsl(18 83% 42% / 0.55),
+      0 8px 24px -8px hsl(18 83% 42% / 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(18 83% 42% / 0);
+  }
+}
+
+/* Hover states only on devices that really hover. */
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 1px 2px hsl(30 20% 20% / 0.06),
+      0 8px 24px -8px hsl(30 20% 20% / 0.18);
+  }
+}
+
+/* Optical vertical centering for toasts: CJK glyph ink sits high in the
+   line box, so geometric centering reads as "text floats upward".
+   Shift content down 2px by trading bottom padding for top padding.
+   (element+attribute selector outranks sonner's own [data-sonner-toast]) */
+li[data-sonner-toast][data-styled='true'] {
+  padding-top: 18px;
+  padding-bottom: 14px;
+}
+
+/* The description line ships in a faint muted gray that is hard to read —
+   match the title's foreground color instead. */
+li[data-sonner-toast][data-styled='true'] [data-description] {
+  color: var(--normal-text);
+}
+
+/* Top notification entrance — slides down from above, never touches layout */
+.notice-in {
+  transition:
+    opacity 240ms var(--ease-out-strong),
+    translate 240ms var(--ease-out-strong);
+
+  @starting-style {
+    opacity: 0;
+    translate: 0 -10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-in,
+  .option-in {
+    transition-duration: 120ms;
+
+    @starting-style {
+      transform: none;
+    }
+  }
+  .flash-correct,
+  .flash-wrong,
+  .group-flash {
+    animation: none;
+  }
+  .pressable:active {
+    transform: none;
+  }
+}
+
+/* Long libraries render visible cards first; keep natural scrolling bounds. */
+[data-group-id], .vocabulary-section article {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 230px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

@@ -1,0 +1,25 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+dist-ssr/
+release/
+verification/
+coverage/
+playwright-report/
+test-results/
+# Local data and credentials
+.env
+.env.*
+!.env.example
+*.local
+*.log
+backups/
+*backup*.json
+*profile*/
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tsbuildinfo

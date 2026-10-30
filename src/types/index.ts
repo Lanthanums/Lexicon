@@ -1,3 +1,7 @@
+export type GroupKind = 'shape' | 'synonym' | 'custom'
+export interface GroupRef { kind: GroupKind | 'isolated'; id: string }
+export interface DragItem { ref: GroupRef; wordId?: string }
+
 export interface WordMeaning {
   pos: string
   en: string
@@ -20,6 +24,9 @@ export interface Word {
 }
 
 export interface WordGroup {
+  notes?: string
+  provenance?: string
+  name?: string
   kind?: 'confusable' | 'single'
   id: string
   wordIds: string[]
@@ -29,10 +36,11 @@ export interface WordGroup {
 }
 
 export interface WordStats {
+  memory?: { stability: number; difficulty: number; lapses: number }
   dueAt?: number
   correct: number
   wrong: number
-  /** 0–5 mastery level (Leitner-ish) */
+  /** 0–5 displayed mastery; memory.stability controls review intervals. */
   level: number
   lastSeen?: number
   lastResult?: boolean
@@ -52,6 +60,8 @@ export interface DictProviderConfig {
 }
 
 export interface Settings {
+  synonymMode?: 'offline' | 'verified'
+  synonymApiKey?: string
   /** 0.5 – 0.95, similarity required for auto-grouping */
   threshold: number
   /** dictionary providers, tried in list order */
@@ -85,6 +95,8 @@ export interface LearningState {
 }
 
 export interface LibraryState {
+  customSets?: Record<string, CustomSet>
+  relationArchive?: SynonymSet[]
   synonymSets: Record<string, SynonymSet>
   words: Record<string, Word>
   groups: Record<string, WordGroup>
@@ -96,6 +108,9 @@ export interface LibraryState {
 }
 
 export interface SynonymSet {
+  provenance?: string
+  nameSource?: 'auto' | 'manual'
+  pendingTypeChoice?: boolean
   id: string
   name: string
   notes: string
@@ -103,4 +118,6 @@ export interface SynonymSet {
   createdAt: number
 }
 
-export type QuizMode = 'zh2en' | 'en2zh' | 'spell' | 'mixed' | 'progressive'
+export type CustomSet = SynonymSet
+
+export type QuizMode = 'zh2en' | 'en2zh' | 'spell' | 'mixed' | 'progressive' | 'synonym'

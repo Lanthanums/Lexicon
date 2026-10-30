@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useLibrary } from '@/store/library'
 import { lookupWord } from '@/lib/dictionary'
+import SynonymSuggestions from '@/sections/SynonymSuggestions'
 import type { Word } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -90,8 +91,8 @@ function wordInput(draft: Draft) {
 function wordStatus(word: Word, stats: Record<string, { dueAt?: number; lastSeen?: number }>) {
   const stat = stats[word.id]
   if (!stat?.lastSeen) return { label: '未学习', className: 'bg-primary/10 text-primary' }
-  if (!stat.dueAt || stat.dueAt <= Date.now()) return { label: '待复习', className: 'bg-amber-600/10 text-amber-800' }
-  return { label: '已学习', className: 'bg-emerald-700/10 text-emerald-800' }
+  if (!stat.dueAt || stat.dueAt <= Date.now()) return { label: '待复习', className: 'bg-amber-600/10 text-amber-800 dark:text-amber-300' }
+  return { label: '已学习', className: 'bg-emerald-700/10 text-emerald-800 dark:text-emerald-300' }
 }
 
 function WordForm({
@@ -232,16 +233,18 @@ function AddWordDialog({
   open,
   onOpenChange,
   onAdded,
+  initialText = '',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onAdded?: (id: string) => void
+  initialText?: string
 }) {
   const { addStudyWord, state } = useLibrary()
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => { if (open) setDraft(EMPTY_DRAFT) }, [open])
+  useEffect(() => { if (open) setDraft({ ...EMPTY_DRAFT, text: initialText }) }, [open, initialText])
 
   async function lookup() {
     if (!draft.text.trim() || loading) return
@@ -369,7 +372,7 @@ function SynonymEditor({
                 ) : <p className="p-6 text-center text-sm text-muted-foreground">没有匹配的单词，可点击「录入新词」。</p>}
               </div>
               {words.length > 100 && <p className="text-xs text-muted-foreground">已显示前 100 项，请搜索以定位其余单词。</p>}
-              {ids.length < 2 && <p className="text-xs text-amber-800">还需选择 {2 - ids.length} 个单词才能保存。</p>}
+              {ids.length < 2 && <p className="text-xs text-amber-800 dark:text-amber-300">还需选择 {2 - ids.length} 个单词才能保存。</p>}
             </div>
           </div>
           <DialogFooter>
@@ -449,7 +452,7 @@ function Flashcards({
     const known = results.filter((item) => item.grade === 'known').length
     const missed = results.filter((item) => item.grade !== 'known').map((item) => item.id).filter((id) => state.words[id])
     return (
-      <section className="stagger-in mx-auto max-w-2xl rounded-2xl border bg-card p-6 text-center shadow-sm sm:p-10" aria-live="polite">
+      <section className="stagger-in rounded-2xl border bg-card p-6 text-center shadow-sm sm:p-10" aria-live="polite">
         <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary"><BookOpen /></span>
         <p className="mt-5 text-sm text-muted-foreground">本轮完成 · {title}</p>
         <p className="font-word mt-2 text-5xl text-primary">{known}<span className="text-2xl text-muted-foreground"> / {results.length}</span></p>
@@ -477,17 +480,18 @@ function Flashcards({
   if (!word) return <div className="mx-auto max-w-2xl rounded-2xl border bg-card p-8 text-center"><p className="text-muted-foreground">这张卡片的单词已从词库中移除。</p><div className="mt-5 flex justify-center gap-2"><Button variant="outline" onClick={onExit}>返回词库</Button><Button onClick={() => { setIndex(i => i + 1); setFlipped(false); scored.current = false }}>跳过这张卡片</Button></div></div>
   const front = direction === 'en2zh' ? word.text : word.gloss
   return (
-    <section className="mx-auto max-w-2xl space-y-4" aria-label={`${title}闪卡学习`}>
+    <section className="study-workspace" aria-label={`${title}闪卡学习`}>
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onExit}><ArrowLeft /> 退出</Button>
         <Progress value={(index / queue.length) * 100} className="h-1.5 flex-1" />
         <span className="text-sm tabular-nums text-muted-foreground">{index + 1} / {queue.length}</span>
       </div>
       <p className="text-center text-xs text-muted-foreground">{title} · {direction === 'en2zh' ? '英 → 中' : '中 → 英'} · 先主动回忆，再翻面</p>
+      <div className="flashcard-layout">
       <div key={`${queue.join('-')}-${index}`} className="stagger-in overflow-hidden rounded-2xl border bg-card shadow-sm">
         <button
           type="button"
-          className="flex min-h-72 w-full flex-col items-center justify-center px-6 py-10 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset sm:min-h-80"
+          className="flex min-h-72 w-full flex-col items-center justify-center min-w-0 px-6 py-10 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset sm:min-h-80"
           onClick={() => setFlipped((value) => !value)}
           aria-label={flipped ? '收起答案' : '显示答案'}
           aria-expanded={flipped}
@@ -495,7 +499,7 @@ function Flashcards({
           {!flipped ? (
             <>
               <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">回忆它的{direction === 'en2zh' ? '含义与用法' : '英文拼写'}</span>
-              <span className={`mt-5 break-words ${direction === 'en2zh' ? 'font-word text-5xl sm:text-6xl' : 'text-3xl font-medium leading-relaxed'}`}>{front}</span>
+              <span className={`mt-5 max-w-full break-words [overflow-wrap:anywhere] ${direction === 'en2zh' ? 'font-word text-5xl sm:text-6xl' : 'text-3xl font-medium leading-relaxed'}`}>{front}</span>
               {direction === 'en2zh' && word.phonetic && <span className="mt-3 text-sm text-muted-foreground">{word.phonetic}</span>}
               <span className="mt-10 inline-flex items-center gap-2 text-xs text-muted-foreground"><CircleHelp className="size-4" /> 点击或按 Space 翻面</span>
             </>
@@ -511,14 +515,23 @@ function Flashcards({
         <div className="border-t bg-background/60 p-4">
           {flipped ? (
             <div className="grid grid-cols-3 gap-2">
-              <Button variant="outline" className="border-emerald-700/30 text-emerald-800 hover:bg-emerald-700/10" onClick={() => grade('known')}><span className="hidden text-xs opacity-60 sm:inline">1</span> 认识</Button>
-              <Button variant="outline" className="border-amber-600/30 text-amber-800 hover:bg-amber-600/10" onClick={() => grade('vague')}><span className="hidden text-xs opacity-60 sm:inline">2</span> 模糊</Button>
+              <Button variant="outline" className="border-emerald-700/30 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-700/10" onClick={() => grade('known')}><span className="hidden text-xs opacity-60 sm:inline">1</span> 认识</Button>
+              <Button variant="outline" className="border-amber-600/30 text-amber-800 dark:text-amber-300 hover:bg-amber-600/10" onClick={() => grade('vague')}><span className="hidden text-xs opacity-60 sm:inline">2</span> 模糊</Button>
               <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => grade('unknown')}><span className="hidden text-xs opacity-60 sm:inline">3</span> 不认识</Button>
             </div>
           ) : <Button variant="secondary" className="w-full" onClick={() => setFlipped(true)}>显示答案 <span className="text-xs opacity-60">Space</span></Button>}
         </div>
       </div>
-      <p className="text-center text-xs text-muted-foreground">翻面后按 1 / 2 / 3 自评；系统不会自动跳题。</p>
+      <aside className="study-sidebar" aria-label="本轮学习概况">
+        <p className="text-xs font-medium tracking-widest text-muted-foreground">本轮学习</p>
+        <p className="mt-3 text-lg font-semibold">一次专注，一个单词</p>
+        <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-1">
+          <div className="study-stat"><p className="text-xs text-muted-foreground">已完成</p><p className="mt-1 text-2xl font-semibold tabular-nums">{results.length}<span className="text-sm font-normal text-muted-foreground"> / {queue.length}</span></p></div>
+          <div className="study-stat"><p className="text-xs text-muted-foreground">本轮自评认识</p><p className="mt-1 text-2xl font-semibold tabular-nums">{results.filter(item => item.grade === 'known').length}</p></div>
+        </div>
+        <div className="mt-6 border-t pt-5 text-xs leading-6 text-muted-foreground"><p>先回忆，再显示答案。</p><p>翻面后按 1 / 2 / 3 自评。</p><p>Space · 翻面</p></div>
+      </aside>
+      </div>
     </section>
   )
 }
@@ -589,6 +602,7 @@ function SingleVocabulary() {
 }
 
 function SynonymVocabulary() {
+  const active = useContext(ActiveContext)
   const { state, addStudyWord, createSynonymSet, deleteSynonymSet } = useLibrary()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<SynonymSet | null | 'new'>(null)
@@ -596,6 +610,7 @@ function SynonymVocabulary() {
   const [editWordId, setEditWordId] = useState<string | null>(null)
   const [study, setStudy] = useState(false)
   const [direction, setDirection] = useState<Direction>('en2zh')
+  const [candidateWord, setCandidateWord] = useState('')
   const sets = Object.values(state.synonymSets) as SynonymSet[]
   const selected = selectedId ? state.synonymSets[selectedId] as SynonymSet | undefined : undefined
 
@@ -629,7 +644,9 @@ function SynonymVocabulary() {
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 rounded-2xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-word text-2xl">近义词，成群记</h2><p className="mt-1 text-sm text-muted-foreground">先比较细微差别，再用主动回忆把它们分清楚。</p></div><Button onClick={() => setEditing('new')}><Layers3 /> 新建词群</Button></div>
-      {sets.length === 0 ? <div className="rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center"><Layers3 className="mx-auto size-8 text-primary/60" /><h3 className="font-word mt-4 text-2xl">让词与词发生联系</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">从现有词库选词，或录入新词，组成你自己的近义词群。不会自动猜测近义关系。</p><div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row"><Button onClick={() => setEditing('new')}><Plus /> 创建词群</Button><Button variant="outline" onClick={loadExamples}><Sparkles /> 载入示例词群</Button></div><p className="mt-3 text-xs text-muted-foreground">示例：big / large / huge，含英文例句与区别，可编辑。</p></div> : <><div className="flex justify-end"><Button variant="ghost" size="sm" onClick={loadExamples}><Sparkles /> 载入示例</Button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{sets.sort((a, b) => b.createdAt - a.createdAt).map((set) => { const words = set.wordIds.map((id) => state.words[id]).filter((word): word is Word => !!word); return <button key={set.id} className="lift stagger-in rounded-2xl border bg-card p-5 text-left shadow-sm focus-visible:ring-2" onClick={() => setSelectedId(set.id)}><div className="flex items-center justify-between"><Badge variant="secondary">{words.length} 个词</Badge><ChevronRight className="size-4 text-muted-foreground" /></div><h3 className="font-word mt-4 text-2xl">{set.name}</h3><p className="font-word mt-3 text-lg text-primary">{words.map((word) => word.text).join(' · ')}</p><p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{set.notes || '查看词义、用法与辨析笔记'}</p></button>})}</div></>}
+      <SynonymSuggestions active={active} onCreated={setSelectedId} onAdd={setCandidateWord} />
+      <AddWordDialog open={!!candidateWord} initialText={candidateWord} onOpenChange={open => { if (!open) setCandidateWord('') }} />
+      {sets.length === 0 ? <div className="rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center"><Layers3 className="mx-auto size-8 text-primary/60" /><h3 className="font-word mt-4 text-2xl">让词与词发生联系</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">可在上方查找候选，按目标词义选择并确认；也可以从现有词库手动选词建群。</p><div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row"><Button onClick={() => setEditing('new')}><Plus /> 创建词群</Button><Button variant="outline" onClick={loadExamples}><Sparkles /> 载入示例词群</Button></div><p className="mt-3 text-xs text-muted-foreground">示例：big / large / huge，含英文例句与区别，可编辑。</p></div> : <><div className="flex justify-end"><Button variant="ghost" size="sm" onClick={loadExamples}><Sparkles /> 载入示例</Button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{sets.sort((a, b) => b.createdAt - a.createdAt).map((set) => { const words = set.wordIds.map((id) => state.words[id]).filter((word): word is Word => !!word); return <button key={set.id} className="lift stagger-in rounded-2xl border bg-card p-5 text-left shadow-sm focus-visible:ring-2" onClick={() => setSelectedId(set.id)}><div className="flex items-center justify-between"><Badge variant="secondary">{words.length} 个词</Badge><ChevronRight className="size-4 text-muted-foreground" /></div><h3 className="font-word mt-4 text-2xl">{set.name}</h3><p className="font-word mt-3 text-lg text-primary">{words.map((word) => word.text).join(' · ')}</p><p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{set.notes || '查看词义、用法与辨析笔记'}</p></button>})}</div></>}
       {editing && <SynonymEditor set={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </div>
   )

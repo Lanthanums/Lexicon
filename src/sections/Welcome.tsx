@@ -1,8 +1,9 @@
+import ActivityChart from '@/sections/ActivityChart'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import UnifiedEntry from '@/sections/UnifiedEntry'
 import { useLibrary, dayKey } from '@/store/library'
 import { lookupWord, type LookupResult } from '@/lib/dictionary'
-import type { DictProviderConfig, LibraryState, Word } from '@/types'
+import type { DictProviderConfig, Word } from '@/types'
 import { AddWordCard } from '@/sections/AddWordCard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -204,7 +205,7 @@ export default function Welcome({
   onStartQuiz: () => void
   onLocateGroup: (groupId: string) => void
 }) {
-  const { state, addWord } = useLibrary()
+  const { state } = useLibrary()
   const daily = useDailyWord(state.settings.dictProviders, state.words)
   const now = new Date()
 
@@ -257,30 +258,6 @@ export default function Welcome({
     return set
   }, [state])
 
-  function addDaily() {
-    if (!daily.data) return
-    const result = addWord({
-      text: daily.data.text,
-      phonetic: daily.data.phonetic,
-      gloss: daily.data.gloss,
-      meanings: daily.data.meanings,
-      source: 'api',
-    })
-    if (result.status === 'duplicate') {
-      toast.info(`「${daily.word}」已在词库中`, { description: '已为你定位到所在分组' })
-      onLocateGroup(result.groupId)
-      return
-    }
-    const names = result.groupedWith
-      .map((id) => state.words[id]?.text)
-      .filter(Boolean)
-    toast.success(`已加入「${daily.word}」`, {
-      description:
-        names.length > 0
-          ? `${result.homophoneMatch ? '检测到同音词，' : ''}与 ${names.join('、')} 归为一组`
-          : '未找到形近词，暂时单成一组',
-    })
-  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
@@ -288,7 +265,7 @@ export default function Welcome({
       <div className="flex flex-col gap-6 lg:col-span-3">
         {/* daily word — capped at 80% of the calendar card's height */}
         <div
-          className="stagger-in flex flex-col rounded-xl border bg-card p-6 shadow-sm"
+          data-guide="daily" className="stagger-in flex flex-col rounded-xl border bg-card p-6 shadow-sm"
           style={
             !dailyExpanded && dailyCap ? { maxHeight: dailyCap } : undefined
           }
@@ -349,7 +326,7 @@ export default function Welcome({
               </div>
             ) : daily.status === 'empty' ? (
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                还没有可推荐的词。可以先去「单词记忆」手动收录，或等待每日一词加载。
+                还没有可推荐的词，先在「录入与管理词汇」中添加一些单词吧。
               </p>
             ) : (
               <>
@@ -427,14 +404,11 @@ export default function Welcome({
                       )}
                     {!dailyInLibrary &&
                       (daily.data ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="pressable mt-4"
-                          onClick={addDaily}
-                        >
-                          加入词库
-                        </Button>
+                        <UnifiedEntry
+                          onLocateWord={id => onLocateGroup(state.words[id]?.groupId ?? id)}
+                          knownInput={{...daily.data,source:'api'}}
+                          renderTrigger={(add,busy) => <Button variant="outline" size="sm" className="pressable mt-4" onClick={add} disabled={busy}>{busy ? '正在归组…' : '加入词库'}</Button>}
+                        />
                       ) : (
                         <button
                           className="mt-4 text-sm text-primary underline-offset-2 hover:underline"
@@ -467,7 +441,7 @@ export default function Welcome({
           className="stagger-in flex flex-1 flex-col rounded-xl border bg-card p-5 shadow-sm"
           style={{ transitionDelay: '60ms' }}
         >
-          <ActivityStats state={state} />
+          <ActivityChart state={state} />
         </div>
       </div>
 
@@ -503,7 +477,7 @@ export default function Welcome({
           <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
             {wordCount > 0
               ? `词库里已有 ${wordCount} 个词，今天也积累一点吧。`
-              : '从每日一词或手动录入开始，建立你的形近词库。'}
+              : '从每日一词或手动录入开始，建立你的词库。'}
           </p>
         </div>
 
@@ -522,7 +496,7 @@ export default function Welcome({
             开始复习
             {wordCount > 0 && (
               <span className="ml-2 text-primary-foreground/70">
-                {wordCount} 词待练
+                {wordCount} 词可练
               </span>
             )}
           </Button>
@@ -599,29 +573,4 @@ function MiniCalendar({
       </div>
     </div>
   )
-}
-
-/** Show recorded activity and due counts, without inferred retention percentages. */
-function ActivityStats({ state }: { state: LibraryState }) {
-  const today = dayKey()
-  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (13 - i))
-    const key = dayKey(d)
-    return { key, label: `${d.getMonth() + 1}/${d.getDate()}`, ...(state.activity[key] ?? { added: 0, reviewed: 0 }) }
-  }), [state.activity])
-  const words = Object.values(state.words)
-  const unseen = words.filter(w => !state.stats[w.id]?.lastSeen).length
-  const due = words.filter(w => {
-    const st = state.stats[w.id]
-    return st?.lastSeen && (!st.dueAt || st.dueAt <= Date.now())
-  }).length
-  const max = Math.max(1, ...days.flatMap(d => [d.added, d.reviewed]))
-  const hasActivity = days.some(d => d.added || d.reviewed)
-  return <div className="space-y-5">
-    <div className="flex items-center justify-between"><h3 className="text-sm font-medium">最近 14 天</h3><div className="flex gap-3 text-xs text-muted-foreground"><span><span className="mr-1 inline-block size-2 rounded-sm bg-primary" />录入</span><span><span className="mr-1 inline-block size-2 rounded-sm bg-muted-foreground/40" />复习</span></div></div>
-    {hasActivity ? <svg viewBox="0 0 560 104" className="h-32 w-full" role="img" aria-label="近14天实际录入与复习次数">
-      {days.map((d, i) => <g key={d.key}><rect x={i * 40 + 7} y={78 - d.added / max * 70} width={10} height={d.added / max * 70} rx={2} className="fill-primary"><title>{d.label} 录入 {d.added} 次</title></rect><rect x={i * 40 + 21} y={78 - d.reviewed / max * 70} width={10} height={d.reviewed / max * 70} rx={2} className="fill-muted-foreground/40"><title>{d.label} 复习 {d.reviewed} 次</title></rect>{i % 2 === 1 && <text x={i * 40 + 18} y={99} textAnchor="middle" className="fill-muted-foreground text-[10px]">{d.label}</text>}</g>)}
-    </svg> : <p className="rounded-lg bg-background px-4 py-7 text-center text-sm leading-6 text-muted-foreground">每一次收录、每一次回忆，都会记录在这里。<br />从上方选择一种方式，开始今天的学习。</p>}
-    <div className="grid grid-cols-3 gap-2 border-t pt-5">{[{ label: '尚未学习', value: unseen }, { label: '到期复习', value: due }, { label: '今日复习次数', value: state.activity[today]?.reviewed ?? 0 }].map(x => <div key={x.label}><p className="font-word text-3xl text-primary">{x.value}</p><p className="mt-1 text-xs text-muted-foreground">{x.label}</p></div>)}</div>
-  </div>
 }

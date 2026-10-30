@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import './index.css'
 import App from './App.tsx'
+import { initializeAppearance } from '@/lib/appearance'
+
+initializeAppearance()
 
 async function boot() {
   if (window.lexicon && !localStorage.getItem('lexicon-state-v1')) {

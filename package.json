@@ -1,7 +1,7 @@
 {
   "name": "lexicon-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0-beta.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,8 +12,11 @@
     "desktop:pack": "npm run build && electron-builder --win dir",
     "desktop:dist": "npm run build && electron-builder --win nsis",
     "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "node tests/desktop.e2e.cjs",
-    "setup:electron": "node node_modules/electron/install.js"
+    "test:e2e": "node tests/guide.e2e.cjs && node tests/motion.e2e.cjs && node tests/beta2.e2e.cjs && node tests/v2.e2e.cjs",
+    "setup:electron": "node node_modules/electron/install.js",
+    "build:wordnet": "node build/build-wordnet.cjs",
+    "test:guide": "node tests/guide.e2e.cjs",
+    "test:motion": "node tests/motion.e2e.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -83,7 +86,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "js-yaml": "4.1.1"
   },
   "description": "Lexicon · 形近辨析、近义词群与单词记忆",
   "main": "electron/main.cjs",
@@ -117,7 +121,7 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "shortcutName": "Lexicon",
-      "artifactName": "Lexicon-Setup-v1.0-${arch}.${ext}",
+      "artifactName": "Lexicon-Setup-v2.0-beta2-${arch}.${ext}",
       "packElevateHelper": false
     },
     "electronDist": "node_modules/electron/dist"

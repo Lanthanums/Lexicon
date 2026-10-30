@@ -55,7 +55,7 @@ export default function LearningNotice({
           <path d="M6 0l1.4 4.6L12 6 7.4 7.4 6 12 4.6 7.4 0 6l4.6-1.4z" />
         </svg>
         <p className="whitespace-nowrap text-sm">
-          模糊度学习建议：阈值{' '}
+          形近词分组建议：阈值{' '}
           <span className="font-word tabular-nums">
             {trace.previous.toFixed(2)} → {trace.suggested.toFixed(2)}
           </span>

@@ -23,6 +23,16 @@ test('v2 relationships, due dates and per-word notes survive round trip', () => 
   const v2 = { ...legacy, words: { a: { ...legacy.words.a, usageNote: 'take something offered', example: 'I accept your offer.' } }, groups: { g: { ...legacy.groups.g, kind: 'single' } }, synonymSets: { s: { id: 's', name: 'accept', notes: 'draft', wordIds: ['a'], createdAt: 2 } }, stats: { a: { ...legacy.stats.a, dueAt: 100000 } } }
   const result = normalizeState(JSON.parse(JSON.stringify(v2)), defaults)
   assert.deepEqual(result.words, v2.words)
-  assert.deepEqual(result.synonymSets, v2.synonymSets)
+  assert.deepEqual(result.relationArchive, Object.values(v2.synonymSets))
+  assert.deepEqual(result.synonymSets, {})
   assert.equal(result.stats.a.dueAt, 100000)
+})
+
+test('old backups default offline; synonym mode and optional key survive validation', () => {
+  assert.equal(normalizeState(legacy, defaults).settings.synonymMode, 'offline')
+  const result = normalizeState({ ...legacy, settings: { synonymMode: 'verified', synonymApiKey: 'synthetic-key' } }, defaults)
+  assert.equal(result.settings.synonymMode, 'verified')
+  assert.equal(result.settings.synonymApiKey, 'synthetic-key')
+  assert.throws(() => normalizeState({ ...legacy, settings: { synonymMode: 'auto-merge' } }, defaults))
+  assert.throws(() => normalizeState({ ...legacy, settings: { synonymApiKey: 'x'.repeat(257) } }, defaults))
 })

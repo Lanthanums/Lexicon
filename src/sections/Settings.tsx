@@ -1,4 +1,7 @@
-import DataTransfer from '@/sections/DataTransfer'
+import Appearance from '@/sections/Appearance'
+import SynonymSettings from '@/sections/SynonymSettings'
+import { Database, LibraryBig, SlidersHorizontal, BookOpen, CircleHelp, Download, Upload } from 'lucide-react'
+import DataTransfer, {OpenDataFolder} from '@/sections/DataTransfer'
 import { memo, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useLibrary } from '@/store/library'
@@ -50,39 +53,28 @@ const LearningCard = memo(function LearningCard() {
 
   return (
     <div
-      className="stagger-in rounded-xl border bg-card p-6 shadow-sm"
+      className="settings-card"
       style={{ transitionDelay: '60ms' }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-word text-xl tracking-tight">模糊度智能学习</h2>
-        <Switch
-          checked={enabled}
-          onCheckedChange={(on) => {
-            setLearningEnabled(on)
-            toast.info(on ? '模糊度学习已开启' : '模糊度学习已关闭')
-          }}
-          aria-label="模糊度智能学习开关"
-        />
+      <div className="settings-row">
+        <div><h3 className="settings-title"><SlidersHorizontal size={18} />自动分组建议</h3>
+          <p className="settings-description">每累计 50 次录入，会根据最近录入的词和你的手动形近分组给出建议；采纳后才会调整匹配阈值。</p>
+          {enabled && <p className="mt-2 text-xs text-muted-foreground">已录入 {addCount} 次 · 再录入 {untilNext} 次生成下一条建议</p>}
+        </div>
+        <Switch checked={enabled} onCheckedChange={on => { setLearningEnabled(on); toast.info(on ? '分组建议已开启' : '分组建议已关闭') }} aria-label="自动分组建议开关" />
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        每积累 50 次形近词录入，在后台采样最近最多 300 个形近词，参考你的手动分组给出阈值建议。普通单词与近义关系不参与计算。
-      </p>
-      {enabled && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          已观察 {addCount} 次录入 · 距离下次学习还有 {untilNext} 次
-        </p>
-      )}
 
       {traces.length > 0 && (
-        <>
+        <details className="mt-5 border-t pt-4">
+          <summary className="cursor-pointer text-sm font-medium">建议记录（{traces.length}）</summary>
           <Separator className="my-4" />
           <div className="mb-2 flex items-center justify-between">
-            <Label>学习痕迹（{traces.length}）</Label>
+            <Label>历史建议</Label>
             <button
               className="text-xs text-muted-foreground underline-offset-2 transition-colors duration-150 hover:text-destructive hover:underline"
               onClick={() => {
                 clearTraces()
-                toast.info('学习痕迹已清空')
+                toast.info('建议记录已清空')
               }}
             >
               清空
@@ -134,7 +126,7 @@ const LearningCard = memo(function LearningCard() {
               )
             })}
           </ul>
-        </>
+        </details>
       )}
     </div>
   )
@@ -153,14 +145,14 @@ const OPTIONAL_PRESETS: Array<{
   {
     id: 'baidu',
     label: '百度翻译',
-    hint: 'fanyi-api.baidu.com · 免费额度 · 需注册开放平台',
+    hint: 'fanyi-api.baidu.com · 需自行申请凭据及确认额度',
     appIdLabel: 'APP ID',
     apiKeyLabel: '密钥',
   },
   {
     id: 'youdao-cloud',
     label: '有道智云',
-    hint: 'openapi.youdao.com · 免费额度 · 需注册智云账号',
+    hint: 'openapi.youdao.com · 需自行申请凭据及确认额度',
     appIdLabel: '应用 ID（appKey）',
     apiKeyLabel: '应用密钥',
   },
@@ -169,9 +161,9 @@ const OPTIONAL_PRESETS: Array<{
 function providerHint(p: DictProviderConfig): string {
   switch (p.id) {
     case 'youdao-web':
-      return '免费 · 快速 · 无需注册'
+      return '有道网页词典 · 无需配置密钥'
     case 'wiktionary':
-      return '免费 · 较慢 · 无需注册'
+      return '英文释义与翻译 · 无需配置密钥'
     case 'baidu':
       return p.appId ? '已配置密钥' : OPTIONAL_PRESETS[0].hint
     case 'youdao-cloud':
@@ -285,19 +277,19 @@ const DictProviderCard = memo(function DictProviderCard() {
 
   return (
     <div
-      className="stagger-in rounded-xl border bg-card p-6 shadow-sm"
+      data-guide="dictionary" className="settings-card"
       style={{ transitionDelay: '120ms' }}
     >
-      <h2 className="font-word text-xl tracking-tight">查词 API</h2>
+      <h3 className="settings-title"><BookOpen size={18} />在线词典</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        排在第一位的是首选（默认通道），其余按顺序作为备选。点左侧圆点可把任意已启用的通道设为首选；拨动开关即可启用或停用，不影响优先级顺序。
+        按列表顺序尝试已启用的词典。点击圆点设为首选，使用开关启用或停用。查询需要联网。
       </p>
 
       <ul className="mt-4 space-y-2">
         {providers.map((p, i) => {
           const keyBased = OPTIONAL_PRESETS.some((x) => x.id === p.id)
           const isCustom = p.id.startsWith('custom-')
-          const isPrimary = i === 0
+          const isPrimary = p.enabled && providers.find(item => item.enabled)?.id === p.id
           return (
             <li
               key={p.id}
@@ -314,11 +306,11 @@ const DictProviderCard = memo(function DictProviderCard() {
                       ? '设为首选'
                       : '启用后才能设为首选'
                 }
-                aria-label={`将 ${p.label} 设为首选`}
+                aria-label={`将 ${p.id === 'youdao-web' ? '网易有道' : p.id === 'wiktionary' ? '维基词典 + MyMemory' : p.label} 设为首选`}
                 disabled={isPrimary || !p.enabled}
                 onClick={() => {
                   setPrimaryProvider(p.id)
-                  toast.success(`「${p.label}」已设为首选`, {
+                  toast.success(`「${p.id === 'youdao-web' ? '网易有道' : p.id === 'wiktionary' ? '维基词典 + MyMemory' : p.label}」已设为首选`, {
                     description: '其余已启用的通道按顺序作为备选',
                   })
                 }}
@@ -339,7 +331,7 @@ const DictProviderCard = memo(function DictProviderCard() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  {p.label}
+                  {p.id === 'youdao-web' ? '网易有道' : p.id === 'wiktionary' ? '维基词典 + MyMemory' : p.label}
                   {isPrimary && (
                     <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary">
                       首选
@@ -368,7 +360,7 @@ const DictProviderCard = memo(function DictProviderCard() {
                   className="shrink-0 text-xs text-destructive underline-offset-2 hover:underline"
                   onClick={() => {
                     removeDictProvider(p.id)
-                    toast.info(`已移除「${p.label}」`)
+                    toast.info(`已移除「${p.id === 'youdao-web' ? '网易有道' : p.id === 'wiktionary' ? '维基词典 + MyMemory' : p.label}」`)
                   }}
                 >
                   移除
@@ -377,7 +369,7 @@ const DictProviderCard = memo(function DictProviderCard() {
               <Switch
                 checked={p.enabled}
                 onCheckedChange={(on) => toggleProvider(p, on)}
-                aria-label={`启用 ${p.label}`}
+                aria-label={`启用 ${p.id === 'youdao-web' ? '网易有道' : p.id === 'wiktionary' ? '维基词典 + MyMemory' : p.label}`}
               />
             </li>
           )
@@ -430,6 +422,7 @@ const DictProviderCard = memo(function DictProviderCard() {
             <div className="space-y-1.5">
               <Label>{keyTarget?.apiKeyLabel}</Label>
               <Input
+                type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="应用密钥"
@@ -458,7 +451,7 @@ const DictProviderCard = memo(function DictProviderCard() {
             <DialogTitle>添加自定义查词 API</DialogTitle>
             <DialogDescription>
               接口地址中用 {'{word}'} 表示单词，{'{appid}'} 与 {'{key}'}{' '}
-              表示凭证（可选）。请求经本地服务器中转，不受跨域限制。
+              表示凭证（可选）。自定义接口需使用公共 HTTPS 地址。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -486,7 +479,7 @@ const DictProviderCard = memo(function DictProviderCard() {
               </div>
               <div className="space-y-1.5">
                 <Label>密钥（可选）</Label>
-                <Input value={cKey} onChange={(e) => setCKey(e.target.value)} />
+                <Input type="password" value={cKey} onChange={(e) => setCKey(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -526,9 +519,10 @@ export default function Settings({
   const t = state.settings.threshold
   const fileRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<number | null>(null)
+  const [pendingImport, setPendingImport] = useState<{ name: string; text: string } | null>(null)
   const shown = draft ?? t
 
-  const wordList = useMemo(() => Object.values(state.words).filter(w => state.groups[w.groupId]?.kind !== 'single'), [state.words, state.groups])
+  const wordList = useMemo(() => Object.values(state.words), [state.words])
 
   /** live preview of what the *draft* threshold would produce */
   const preview = useMemo(() => {
@@ -549,11 +543,11 @@ export default function Settings({
   }, [wordList, state.groups, shown])
 
   function fuzzyLabel(v: number): string {
-    if (v <= 0.58) return '非常宽松 — 稍像就归组'
-    if (v <= 0.68) return '宽松 — 差一两个字母即归组'
-    if (v <= 0.78) return '适中 — 推荐的平衡区间'
-    if (v <= 0.88) return '严格 — 只归非常相似的词'
-    return '非常严格 — 几乎只差一个字母'
+    if (v <= 0.58) return '非常宽松 · 更容易匹配，建议检查分组结果'
+    if (v <= 0.68) return '宽松 · 接受较多字形差异'
+    if (v <= 0.78) return '适中 · 兼顾匹配范围与相似程度'
+    if (v <= 0.88) return '严格 · 需要较高的字形相似度'
+    return '非常严格 · 仅接受高度相似的匹配'
   }
 
   function exportJson() {
@@ -569,107 +563,61 @@ export default function Settings({
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
-      {/* threshold */}
-      <div className="stagger-in rounded-xl border bg-card p-6 shadow-sm">
-        <h2 className="font-word text-xl tracking-tight">形近词归类模糊度</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          控制录入新词时自动归组的宽松程度。同音词（音标相同）不受阈值影响，始终归为一组。
-        </p>
-
-        <div className="mt-6 space-y-3">
-          <div className="flex items-baseline justify-between">
-            <Label>相似度阈值</Label>
-            <span className="font-word text-2xl tabular-nums">
-              {shown.toFixed(2)}
-            </span>
+    <div className="settings-layout">
+      <h3 className="settings-category">外观</h3>
+      <Appearance />
+      <h3 className="settings-category">形近词</h3>
+      <section className="settings-card" aria-labelledby="shape-settings-title">
+        <div className="settings-row">
+          <div><h3 id="shape-settings-title" className="settings-title"><LibraryBig size={18} />形近词分组</h3>
+            <p className="settings-description">阈值越高，自动匹配越严格。音标标准化后相同的词仍会归组。修改后适用于新录入的形近词。</p>
           </div>
-          <Slider
-            value={[shown]}
-            min={0.5}
-            max={0.95}
-            step={0.01}
-            onValueChange={([v]) => setDraft(v)}
-            onValueCommit={([v]) => {
-              setThreshold(v)
-              setDraft(null)
-              toast.info(`阈值已调整为 ${v.toFixed(2)}`, {
-                description: '新录入的词将按新阈值归组',
-              })
-            }}
-          />
-          <p className="text-xs text-muted-foreground">{fuzzyLabel(shown)}</p>
-
-          {preview && (
-            <div className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
-              按当前阈值重新聚类：共 {preview.total} 组，其中{' '}
-              {preview.multi} 个形近组（覆盖 {preview.grouped} 个词）。
-            </div>
-          )}
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                className="pressable w-full"
-                disabled={wordList.length === 0}
-              >
-                按当前阈值重新分组全部单词
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>重新分组？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  将以阈值 {shown.toFixed(2)}{' '}
-                  对词库中所有单词重新计算形近词分组。手动归组的关系会被保留，其余自动分组将被重算。
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className="pressable">
-                  取消
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  className="pressable"
-                  onClick={() => {
-                    recluster()
-                    toast.success('已按当前阈值重新分组')
-                  }}
-                >
-                  重新分组
-                </AlertDialogAction>
-              </AlertDialogFooter>
+          <div className="settings-control space-y-3">
+            <div className="flex items-baseline justify-between"><Label id="threshold-label">匹配阈值</Label><span className="font-word text-2xl tabular-nums">{shown.toFixed(2)}</span></div>
+            <Slider aria-labelledby="threshold-label" value={[shown]} min={0.5} max={0.95} step={0.01}
+              onValueChange={([v]) => setDraft(v)} onValueCommit={([v]) => { setThreshold(v); setDraft(null); toast.info(`阈值已调整为 ${v.toFixed(2)}`, { description: '新录入的词将按新阈值归组' }) }} />
+            <p className="text-xs text-muted-foreground">{fuzzyLabel(shown)}</p>
+          </div>
+        </div>
+        <div className="settings-detail flex flex-wrap items-center justify-between gap-4">
+          <p className="min-w-0 text-sm text-muted-foreground">{preview ? `分组预览：${preview.multi} 个多词组，包含 ${preview.grouped} 个词；共 ${preview.total} 组。` : '录入形近词后，可预览并调整分组。'}</p>
+          <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" disabled={wordList.length === 0}>重新分组形近词</Button></AlertDialogTrigger>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重新分组？</AlertDialogTitle><AlertDialogDescription>将以阈值 {shown.toFixed(2)} 重新计算所有单词的形近关系，保留手动形近组。近义关系与学习记录保持。</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => { recluster(); toast.success('已按当前阈值重新分组') }}>重新分组</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
         </div>
-      </div>
+      </section>
 
       {/* threshold learning */}
       <LearningCard />
+      <h3 className="settings-category">近义词</h3>
+      <SynonymSettings />
 
       {/* dict providers */}
+      <h3 className="settings-category">单词释义</h3>
       <DictProviderCard />
 
-      <DataTransfer />
+      <h3 className="settings-category">数据与备份</h3>
       {/* data */}
       <div
-        className="stagger-in rounded-xl border bg-card p-6 shadow-sm"
+        data-guide="backup" className="settings-card"
         style={{ transitionDelay: '180ms' }}
       >
-        <h2 className="font-word text-xl tracking-tight">数据</h2>
+        <h3 className="settings-title"><Database size={18} />数据与备份</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          词库保存在当前设备。桌面版额外保留每日自动备份，也可随时导出 JSON。
+          词库与学习记录保存在本机。导出 JSON 可用于备份或转移到其他设备；导入将替换当前词库。
         </p>
-        <div className="mt-4 flex gap-2">
-          <Button variant="outline" className="pressable flex-1" onClick={exportJson}>
-            导出备份
+        <div className="backup-top mt-5"><div className="backup-primary-actions flex flex-wrap gap-2">
+          <Button variant="outline" className="pressable" onClick={exportJson}>
+            <Download size={16} />导出备份
           </Button>
           <Button
             variant="outline"
-            className="pressable flex-1"
+            className="pressable"
             onClick={() => fileRef.current?.click()}
           >
-            导入备份
+            <Upload size={16} />导入备份
           </Button>
           <input
             ref={fileRef}
@@ -678,23 +626,32 @@ export default function Settings({
             className="hidden"
             onChange={async (e) => {
               const file = e.target.files?.[0]
-              if (!file) return
-              const text = await file.text()
-              if (Object.keys(state.words).length && !window.confirm('导入会替换当前词库与学习记录。当前数据会保留恢复副本，是否继续？')) { e.target.value = ''; return }
-              if (importState(text)) toast.success('备份已导入')
-              else toast.error('导入失败：文件格式不正确')
               e.target.value = ''
+              if (!file) return
+              try { setPendingImport({ name: file.name, text: await file.text() }) }
+              catch { toast.error('无法读取备份文件，请重新选择') }
             }}
           />
-        </div>
+        </div><OpenDataFolder/></div>
+        <AlertDialog open={pendingImport !== null} onOpenChange={open => { if (!open) setPendingImport(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader><AlertDialogTitle>导入备份？</AlertDialogTitle><AlertDialogDescription className="break-all">将导入「{pendingImport?.name}」，替换当前单词、分组和学习记录。当前词库会保存为导入前副本，供之后恢复。</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => {
+              if (pendingImport && importState(pendingImport.text)) toast.success('备份已导入')
+              else toast.error('导入失败：文件格式不正确')
+              setPendingImport(null)
+            }}>确认导入</AlertDialogAction></AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-        <Separator className="my-5" />
-
+        {!!state.relationArchive?.length && <div className="mt-4 rounded-lg border p-4 text-sm"><p>旧版多重近义关系已整理为每词一个近义组。完整原关系与笔记保存在归档中（{state.relationArchive.length} 项），可随备份保留。</p><Button variant="outline" size="sm" className="mt-2" onClick={() => { const url=URL.createObjectURL(new Blob([JSON.stringify(state.relationArchive,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='lexicon-relation-archive.json';a.click();URL.revokeObjectURL(url) }}>导出旧关系归档</Button></div>}
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">桌面版另存每日快照。建议定期导出至其他位置；备份文件可能包含你配置的词典凭据。</p>
+        <div className="backup-maintenance mt-6 border-t pt-5"><DataTransfer/><div className="backup-delete">
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
               variant="ghost"
-              className="pressable w-full text-destructive hover:text-destructive"
+              className="pressable text-destructive hover:text-destructive"
             >
               清空全部数据
             </Button>
@@ -719,37 +676,17 @@ export default function Settings({
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
+        </AlertDialog></div></div>
       </div>
 
-      {/* onboarding tour replay */}
-      <div
-        className="stagger-in flex items-center justify-between rounded-xl border bg-card p-6 shadow-sm"
-        style={{ transitionDelay: '220ms' }}
-      >
-        <div>
-          <h2 className="font-word text-xl tracking-tight">新手导览</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            四个页面的功能速览，随时可以再看一遍。
-          </p>
+      <h3 className="settings-category">关于</h3>
+      <section className="settings-card settings-help" aria-labelledby="help-title">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><h3 id="help-title" className="settings-title"><CircleHelp size={18} />帮助与关于</h3><p className="settings-description">Lexicon v2.0 beta2</p></div>
+          <Button variant="outline" onClick={onReplayTour}>互动使用教学</Button>
         </div>
-        <Button variant="outline" className="pressable" onClick={onReplayTour}>
-          重看导览
-        </Button>
-      </div>
-
-      {/* about */}
-      <div
-        className="stagger-in rounded-xl border bg-card p-6 shadow-sm"
-        style={{ transitionDelay: '240ms' }}
-      >
-        <h2 className="font-word text-xl tracking-tight">关于查词</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          默认首选网易有道网页词典（经本地服务器中转，亚秒级返回音标与中文释义）；英文维基词典
-          + MyMemory 翻译的免费兜底链路在部分网络下不可达，因此默认关闭，需要时可在上方「查词
-          API」中手动开启，或启用百度翻译 / 有道智云（需自行注册开放平台获取免费额度）、接入任意自定义接口。网络不可用或查不到时，可手动填写释义加入；离线状态下已保存的词库与测验功能完全可用。
-        </p>
-      </div>
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">查词依赖所选服务的网络与可用性。无法查询时，可手动填写释义；已保存的词库和抽查可离线使用。录入时统一检查形近与近义关系；候选接近时由你确认。</p>
+      </section>
     </div>
   )
 }

@@ -1,0 +1,117 @@
+{
+  "dataset": "Open English WordNet",
+  "edition": "2025",
+  "source": "https://github.com/globalwordnet/english-wordnet/tree/dc343f2683279ecbb13fab4e2fd778d7b162d287",
+  "commit": "dc343f2683279ecbb13fab4e2fd778d7b162d287",
+  "attribution": "Open English WordNet Team; derived from Princeton University WordNet",
+  "license": "CC-BY-4.0; underlying Princeton WordNet License",
+  "modification": "Lowercase English lemmas only; multi-member synsets only; definitions retained; first-letter JSON shards. No inferred relations, generated explanations, examples or translations.",
+  "terms": 90243,
+  "synsets": 44710,
+  "files": {
+    "a.json": {
+      "bytes": 1148739,
+      "sha256": "1de44961815bbafb2eb97ac7091046c57888062cbec92a4217c2205d466002c2"
+    },
+    "b.json": {
+      "bytes": 1067938,
+      "sha256": "87bd4a8ad23ea32c80f46e4079541f93f9ead51c6c3ad3edb14c342e3c6f19f8"
+    },
+    "c.json": {
+      "bytes": 1768894,
+      "sha256": "0daeef6c339130fe56a73bddfd43aa5a8fd8ba52c1f9d3f95f8a32436d8d38c5"
+    },
+    "d.json": {
+      "bytes": 911083,
+      "sha256": "a6c1719b794adbff171a2d9b26b373e730353c5331b04cf9300441f6b59fa452"
+    },
+    "e.json": {
+      "bytes": 683317,
+      "sha256": "11f3baf55ec313df773770a7ce15876abfee7174f5abf049f9bfc4755cc69281"
+    },
+    "f.json": {
+      "bytes": 782909,
+      "sha256": "4a3ff7da2296d36f7cb7c5ea00bb4aac03991f6af763d36c1a73c11e3c21c48a"
+    },
+    "g.json": {
+      "bytes": 649685,
+      "sha256": "daf66cc2adeba4819ac7649469e7a5f5e980d8d3a2ca72818c3d9733824cb954"
+    },
+    "h.json": {
+      "bytes": 677740,
+      "sha256": "6758d7307aeee8dc98d865744b8b8e66bc3c8a762a803af9d306d48a34345939"
+    },
+    "i.json": {
+      "bytes": 595989,
+      "sha256": "85f96e8b8cc4569e9abb8cf48427f79096b966d1bf67271243364fae4d5b48f6"
+    },
+    "j.json": {
+      "bytes": 165656,
+      "sha256": "01e87b0734d6c00441855eb1207a2abaf7c9dd6ce13be0bf7c487a3bf58ae88e"
+    },
+    "k.json": {
+      "bytes": 170801,
+      "sha256": "7d206e39d00b20304052221d65abf6188b3c8d869749e2e62f22bebf60736e77"
+    },
+    "l.json": {
+      "bytes": 686648,
+      "sha256": "4dd64c3e9b6cb56dbee6d6a13999dd743c287bf86ff1a0adb51fb1398ce06de2"
+    },
+    "m.json": {
+      "bytes": 918861,
+      "sha256": "d9278a2ba0e9f9b6ed61719d2102b6af9d391534e64543dde762c8ee31dd88ea"
+    },
+    "n.json": {
+      "bytes": 388101,
+      "sha256": "acf9f2a4f1ae904a134ea0692ec6879212ca1be3d550657b6feb28bf92d3d8d8"
+    },
+    "o.json": {
+      "bytes": 415736,
+      "sha256": "ff6a594bc2462436a8934839420aa750143be9edcb1592464535d5cf0c0150a2"
+    },
+    "p.json": {
+      "bytes": 1426621,
+      "sha256": "af5d62b9c7f99289c554ac03db568fabdf03a34fa13ea50a9a000b478ee647c0"
+    },
+    "q.json": {
+      "bytes": 84449,
+      "sha256": "2a7dff6930743ab2854ec089107ec908d820f43bee3996154678e9126d899253"
+    },
+    "r.json": {
+      "bytes": 829987,
+      "sha256": "74f4fca9421db1d613eb7166618e0e889b0fc5360058baeaef8490c048899231"
+    },
+    "s.json": {
+      "bytes": 1972395,
+      "sha256": "03a34016f31eacf245bec25a4a6b3239f839c174016ac11faa7eb9f9027ad1aa"
+    },
+    "t.json": {
+      "bytes": 922158,
+      "sha256": "3d6c7332874cba006e8e3ce100d38fbb1fe3a484a04e39d4f7cdd0b904390cb9"
+    },
+    "u.json": {
+      "bytes": 333233,
+      "sha256": "aefb1a90b054d2dd63ef1cc74dc1cbf62c4c82568d4da978e788f7275d4f0388"
+    },
+    "v.json": {
+      "bytes": 305968,
+      "sha256": "91793f7877c40d0750a79ebe5d32e609e29016cb6cf8edd9a75405cdabc7fa22"
+    },
+    "w.json": {
+      "bytes": 518095,
+      "sha256": "6f76be461bdd1ebf1743312b23da0a7d898b43ba8d25cedb6c039ffdc2de6369"
+    },
+    "x.json": {
+      "bytes": 23338,
+      "sha256": "899a0a29425e17c7008911c830b4a359dda09012b8db0093c52235af4c5b3604"
+    },
+    "y.json": {
+      "bytes": 70484,
+      "sha256": "4b3203da65f32ef808641d5cc064b840ccf346cb5029c14dc3529e8b9c93e295"
+    },
+    "z.json": {
+      "bytes": 42487,
+      "sha256": "eed6dec4e24151cd9488e502c0ed7953f8da16260b05fb7fbf4eee3da541085e"
+    }
+  }
+}

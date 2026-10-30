@@ -1,3 +1,5 @@
+import {scheduleAnswer,rateMastery} from '@/lib/memorySchedule'
+import { reconcileRelations, undoPatch, restoreDeletedWord } from '@/lib/relations'
 import {
   createContext,
   useCallback,
@@ -16,7 +18,6 @@ import type {
   Settings,
   Word,
   WordGroup,
-  WordStats,
 } from '@/types'
 import { clusterWords, wordSimilarity } from '@/lib/similarity'
 import type { ThresholdSuggestion } from '@/lib/learn'
@@ -34,11 +35,13 @@ export const DEFAULT_PROVIDERS: DictProviderConfig[] = [
 ]
 
 const DEFAULT_SETTINGS: Settings = {
+  synonymMode: 'offline',
   threshold: 0.7,
   dictProviders: DEFAULT_PROVIDERS,
 }
 
 const EMPTY: LibraryState = {
+  customSets: {},
   synonymSets: {},
   words: {},
   groups: {},
@@ -93,6 +96,10 @@ export interface GroupCandidate {
 
 interface LibraryApi {
   state: LibraryState
+  applyManagement: (update: (draft: LibraryState) => void) => void
+  managementTransaction: (update: (draft: LibraryState) => void) => () => void
+  deleteManaged: (kind: 'word' | 'shape' | 'synonym' | 'custom', id: string) => () => void
+  setMastery: (id: string, level: number) => void
   addStudyWord: (input: NewWordInput) => AddResult
   createSynonymSet: (name: string, wordIds: string[], notes: string) => string
   updateSynonymSet: (id: string, patch: { name?: string; notes?: string; wordIds?: string[] }) => void
@@ -111,6 +118,7 @@ interface LibraryApi {
   moveWordInGroup: (groupId: string, wordId: string, dir: -1 | 1) => void
   detachWord: (id: string) => void
   setThreshold: (t: number) => void
+  updateSynonymSettings: (patch: Pick<Settings, 'synonymMode' | 'synonymApiKey'>) => void
   updateDictProvider: (id: string, patch: Partial<DictProviderConfig>) => void
   addDictProvider: (cfg: DictProviderConfig) => void
   removeDictProvider: (id: string) => void
@@ -170,8 +178,8 @@ const SEED: Array<NewWordInput & { seedGroup: string }> = [
 
 /* ---------- provider ---------- */
 
-export function LibraryProvider({ children }: { children: ReactNode }) {
-  const [state, setReactState] = useState<LibraryState>(load)
+export function LibraryProvider({ children, initialState, persist = true }: { children: ReactNode; initialState?: LibraryState; persist?: boolean }) {
+  const [state, setReactState] = useState<LibraryState>(() => initialState ? structuredClone(initialState) : load())
   const stateRef = useRef(state)
   // Transactions run once, synchronously, so callers get the actual add result.
   const setState = useCallback((update: LibraryState | ((prev: LibraryState) => LibraryState)) => {
@@ -181,6 +189,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!persist) return
     const flush = () => {
       try {
         const raw = JSON.stringify(stateRef.current)
@@ -198,15 +207,55 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)
     }
-  }, [state])
+  }, [state, persist])
+
+  const managementTransaction = useCallback((update: (draft: LibraryState) => void, recoverWordId?: string): (() => void) => {
+    const before = structuredClone(stateRef.current)
+    const draft = structuredClone(before)
+    update(draft)
+    const after = normalizeState(reconcileRelations(draft), EMPTY)
+    setState(after)
+    let used = false
+    return () => {
+      if (used) return
+      try { setState(normalizeState(undoPatch(before, after, stateRef.current), EMPTY)); used = true; toast.success('已撤销') }
+      catch (error) {
+        if (recoverWordId) {
+          try {
+            setState(normalizeState(restoreDeletedWord(before, stateRef.current, recoverWordId), EMPTY))
+            used = true
+            toast.success('已恢复为独立单词', { description: '原关系已有后续变动，已保留这些变动。单词与学习记录已找回，请重新归组。', duration: 10000 })
+            return
+          } catch (recoveryError) { toast.error(recoveryError instanceof Error ? recoveryError.message : '恢复失败，请检查备份'); return }
+        }
+        toast.error(error instanceof Error ? error.message : '无法撤销，当前数据已保留')
+      }
+    }
+  }, [setState])
+  const applyManagement = useCallback((update: (draft: LibraryState) => void) => { managementTransaction(update) }, [managementTransaction])
+  const deleteManaged = useCallback((kind: 'word' | 'shape' | 'synonym' | 'custom', id: string) => managementTransaction(draft => {
+    if (kind === 'word') {
+      delete draft.words[id]; delete draft.stats[id]
+      Object.values(draft.groups).forEach(group => { group.wordIds = group.wordIds.filter(wid => wid !== id) })
+      Object.values(draft.synonymSets).forEach(group => { group.wordIds = group.wordIds.filter(wid => wid !== id) })
+      Object.values(draft.customSets ?? {}).forEach(group => { group.wordIds = group.wordIds.filter(wid => wid !== id) })
+    } else if (kind === 'shape') delete draft.groups[id]
+    else if (kind === 'synonym') delete draft.synonymSets[id]
+    else if (draft.customSets) delete draft.customSets[id]
+  }, kind === 'word' ? id : undefined), [managementTransaction])
+  const setMastery = useCallback((id: string, level: number) => {
+    if (!Number.isInteger(level) || level < 0 || level > 5) return
+    setState(prev=>!prev.words[id]?prev:({...prev,stats:{...prev.stats,[id]:rateMastery(prev.stats[id],level)}}))
+  }, [setState])
 
   const lastLearned = useRef(state.learning.addCount)
   useEffect(() => {
     const count = state.learning.addCount
-    if (!count || count % LEARN_EVERY || count === lastLearned.current || !state.learning.enabled) return
+    if (!state.learning.enabled) { lastLearned.current=count; return }
+    if (!count || Math.floor(count / LEARN_EVERY) <= Math.floor(lastLearned.current / LEARN_EVERY)) return
     lastLearned.current = count
     const snapshot = stateRef.current
-    const words = Object.values(snapshot.words).filter(w => snapshot.groups[w.groupId]?.kind !== 'single').slice(-300)
+    const words = Object.values(snapshot.words).slice(-300)
     const worker = new Worker(new URL('../lib/threshold.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = (event: MessageEvent<ThresholdSuggestion | null>) => {
       const sug = event.data
@@ -232,7 +281,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       const threshold = state.settings.threshold
       const best = new Map<string, GroupCandidate>()
       for (const w of Object.values(state.words)) {
-        if (state.groups[w.groupId]?.kind === 'single') continue;
         const { score, homophone } = wordSimilarity(
           input.text,
           w.text,
@@ -316,7 +364,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       // find every existing word similar enough to join
       const hits: Array<{ word: Word; score: number; homophone: boolean }> = []
       for (const w of Object.values(prev.words)) {
-        if (prev.groups[w.groupId]?.kind === 'single') continue;
         const { score, homophone } = wordSimilarity(
           input.text,
           w.text,
@@ -651,6 +698,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }))
   }, [setState])
 
+  const updateSynonymSettings = useCallback((patch: Pick<Settings, 'synonymMode' | 'synonymApiKey'>) => {
+    setState(prev => ({ ...prev, settings: { ...prev.settings, ...patch } }))
+  }, [setState])
+
   const setLearningEnabled = useCallback((on: boolean) => {
     setState((prev) => ({
       ...prev,
@@ -677,7 +728,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const recluster = useCallback(() => {
     setState((prev) => {
-      const wordList = Object.values(prev.words).filter(w => prev.groups[w.groupId]?.kind !== 'single')
+      const wordList = Object.values(prev.words)
       if (wordList.length === 0) return prev
       const locked = Object.values(prev.groups)
         .filter((g) => g.manual && g.wordIds.length > 1)
@@ -688,7 +739,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         prev.settings.threshold,
         locked,
       )
-      const groups: Record<string, WordGroup> = Object.fromEntries(Object.entries(prev.groups).filter(([,g]) => g.kind === 'single'))
+      const groups: Record<string, WordGroup> = {}
       const words = { ...prev.words }
       for (const cluster of clusters) {
         const gid = uid()
@@ -708,21 +759,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const recordAnswer = useCallback((id: string, correct: boolean) => {
     setState((prev) => {
-      const prevStats: WordStats = prev.stats[id] ?? {
-        correct: 0,
-        wrong: 0,
-        level: 0,
-      }
-      const stats: WordStats = {
-        correct: prevStats.correct + (correct ? 1 : 0),
-        wrong: prevStats.wrong + (correct ? 0 : 1),
-        level: correct
-          ? Math.min(5, prevStats.level + 1)
-          : Math.max(0, prevStats.level - 1),
-        dueAt: Date.now() + (correct ? [1, 3, 7, 14, 30, 60][Math.min(5, prevStats.level)] * 86400000 : 5 * 60000),
-        lastSeen: Date.now(),
-        lastResult: correct,
-      }
+      if(!prev.words[id])return prev
+      const stats = scheduleAnswer(prev.stats[id],correct)
       const today = dayKey()
       const act = prev.activity[today] ?? { added: 0, reviewed: 0 }
       return {
@@ -793,14 +831,16 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       const parsed = normalizeState(JSON.parse(json), EMPTY)
       // Keep the previous library available even when a valid import replaces it.
       const previous = JSON.stringify(stateRef.current)
-      localStorage.setItem('lexicon-before-import', previous)
-      window.lexicon?.saveBeforeImport(previous).catch(() => toast.error('导入前的磁盘备份失败，本地恢复副本仍保留'))
+      if (persist) {
+        localStorage.setItem('lexicon-before-import', previous)
+        window.lexicon?.saveBeforeImport(previous).catch(() => toast.error('导入前的磁盘备份失败，本地恢复副本仍保留'))
+      }
       setState(parsed)
       return true
     } catch {
       return false
     }
-  }, [setState])
+  }, [setState, persist])
 
   const addStudyWord = useCallback((input: NewWordInput): AddResult => {
     const text = input.text.trim().toLowerCase()
@@ -844,6 +884,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const api = useMemo<LibraryApi>(
     () => ({
       state,
+      applyManagement, managementTransaction, deleteManaged, setMastery,
       addStudyWord,
       createSynonymSet,
       updateSynonymSet,
@@ -859,6 +900,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       moveWordInGroup,
       detachWord,
       setThreshold,
+      updateSynonymSettings,
       updateDictProvider,
       addDictProvider,
       removeDictProvider,
@@ -878,6 +920,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      applyManagement, managementTransaction, deleteManaged, setMastery,
       addStudyWord,
       createSynonymSet,
       updateSynonymSet,
@@ -893,6 +936,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       moveWordInGroup,
       detachWord,
       setThreshold,
+      updateSynonymSettings,
       updateDictProvider,
       addDictProvider,
       removeDictProvider,

@@ -23,6 +23,7 @@ export function thirdPartyNotices(): Plugin {
           const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
           const files = readdirSync(root, { withFileTypes: true }).filter(f => f.isFile() && /^(licen[cs]e|copying|notice)(\.|$|-)/i.test(f.name))
           const texts = files.map(f => readFileSync(path.join(root, f.name), 'utf8').trim())
+          if (!texts.length && name === 'victory-vendor') texts.push(readFileSync(path.resolve('build/licenses/victory-vendor-LICENSE.txt'), 'utf8').trim())
           if (!texts.length && name === 'react-remove-scroll-bar') texts.push(readFileSync(path.resolve('build/licenses/react-remove-scroll-bar-LICENSE.txt'), 'utf8').trim())
           if (!texts.length && name.startsWith('@radix-ui/')) texts.push(readFileSync(path.resolve('build/licenses/radix-ui-LICENSE.txt'), 'utf8').trim())
           if (!texts.length) { missing.push(name); continue }

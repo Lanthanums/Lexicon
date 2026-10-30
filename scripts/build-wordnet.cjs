@@ -1,5 +1,5 @@
 // Rebuild the shipped index from the pinned official OEWN source checkout.
-// Usage: node build/build-wordnet.cjs <english-wordnet-source-directory>
+// Usage: node scripts/build-wordnet.cjs <english-wordnet-source-directory>
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto')
 const yaml = require('js-yaml')
 const input = path.resolve(process.argv[2] || '')

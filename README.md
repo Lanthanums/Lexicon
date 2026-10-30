@@ -2,9 +2,9 @@
 
 **Give every word a place.** A Windows desktop vocabulary app for collecting words, connecting related meanings and practising recall.
 
-[简体中文](README_zh.md) · [Downloads](https://github.com/Lanthanums/Lexicon/releases) · [Release notes](RELEASE_NOTES.md)
+[简体中文](README_zh.md) · [Downloads](https://github.com/Lanthanums/Lexicon/releases) · [Release notes](docs/RELEASE_NOTES.md)
 
-Current source version: **v2.0 beta2** (`2.0.0-beta.2`). The interface is in Chinese, with light, dark and system appearance modes. Downloadable releases may have a different version from the source on `main`; check the release title before downloading.
+Current stable version: **v2.0** (`2.0.0`). The interface is in Chinese, with light, dark and system appearance modes. The [v2.0 release](https://github.com/Lanthanums/Lexicon/releases/tag/v2.0) provides the Windows x64 installer, portable archive, source archive and checksums.
 
 ## Your word space
 
@@ -17,7 +17,7 @@ Current source version: **v2.0 beta2** (`2.0.0-beta.2`). The interface is in Chi
 
 ## Get started
 
-For a packaged Windows build, download the version you want from [Releases](https://github.com/Lanthanums/Lexicon/releases). Use the installer, or fully extract the portable archive and run `Lexicon.exe` inside its application folder. Close older instances first. Build from source below if the beta2 build is not available as a release asset.
+For a packaged Windows build, download the version you want from [Releases](https://github.com/Lanthanums/Lexicon/releases). Use the installer, or fully extract the portable archive and run `Lexicon.exe` inside its application folder. Close older instances first.
 
 1. Open **录入与管理词汇** and enter a word. To add several, separate them with semicolons, for example `effluent;affluent;effulgent`. Chinese semicolons and newlines also work.
 2. Review missing definitions or ambiguous grouping choices together, then save the batch. Cancelling keeps your input and adds nothing.
@@ -48,26 +48,27 @@ Review prioritises due words, then new words, with advance practice available af
 
 Spelling hints reveal the first letter, phonetics and then the full word. Assisted answers do not increase mastery. Synonym recall accepts answers in any order: groups of up to three require all members, while larger groups require at least 80%, rounded up. Missed members remain available for consolidation even when the group passes. Retry queues carry across additional rounds until completed or reset.
 
-Scheduling uses a transparent heuristic exponential model. It is not trained FSRS and does not provide a calibrated personal retention estimate. The seven-day forecast assumes all scheduled reviews are answered correctly and no words are added. See [Memory scheduling](MEMORY_SCHEDULING.md) for the rules and limits.
+Scheduling uses a transparent heuristic exponential model. It is not trained FSRS and does not provide a calibrated personal retention estimate. The seven-day forecast assumes all scheduled reviews are answered correctly and no words are added. See [Memory scheduling](docs/MEMORY_SCHEDULING.md) for the rules and limits.
 
 ## Local data, dictionaries and backups
 
 Your library is stored locally, with automatic desktop snapshots and JSON export/import. Imports require confirmation and retain a pre-import recovery copy. There is no cloud synchronisation. A blank distribution contains no personal learning records; launching it normally still opens your existing local library if one is present.
 
-- Export a backup before trying a beta or switching versions. v2 adds custom groups, member order and unresolved merge choices that older versions do not understand. Existing word IDs, definitions and learning history are preserved; archived conflicting synonym relationships remain exportable in `relationArchive`.
+- Export a backup before upgrading or switching versions. v2 adds custom groups, member order and unresolved merge choices that older versions do not understand. Existing word IDs, definitions and learning history are preserved; archived conflicting synonym relationships remain exportable in `relationArchive`.
 - Dictionary and synonym credentials are stored locally and may be included in exported backups. Check a backup before sharing it.
 - Offline synonym candidates use the bundled **Open English WordNet 2025** index. Optional API verification uses Datamuse; definition lookups use the configured dictionary services. These requests need a network connection. No on-device model is installed or trained.
-- Public dictionary data is separate from your personal library. Dataset and dependency licences remain in [Third-party notices](THIRD_PARTY_NOTICES.md).
+- Public dictionary data is separate from your personal library. Dataset and dependency licences remain in [Third-party notices](docs/THIRD_PARTY_NOTICES.md).
 
-## What's new in beta2
+## What's new in v2.0
 
 - Batch lookup, one combined review dialog and compact controls that stay accessible while scrolling.
 - A four-area overview plus four hidden-interaction exercises in an isolated practice library.
 - Guide hints appear after positioning, including after window resizing; dialogs fade without shifting their centres, and popovers retain their anchors.
 - Immediate mastery-slider feedback, simpler page transitions and reduced-motion support for review charts.
+- A shared package version for the sidebar, About, executable and installer.
 - Adaptive review scheduling, clearer backup controls and a staged-copy fallback when Windows reports `EXDEV` while saving a snapshot.
 
-See [Release notes](RELEASE_NOTES.md) for this revision.
+See [Release notes](docs/RELEASE_NOTES.md) for this revision.
 
 ## Build and run
 
@@ -99,15 +100,17 @@ Generated packages are written to `release/`. The source checkout contains no pe
 ```sh
 npm test
 npm run test:e2e
-node tests/backup.e2e.cjs
-node tests/appearance.e2e.cjs
 ```
 
-The beta2 review candidate passed **51 unit tests and 36 packaged Electron regression groups** with no page errors. Coverage includes real word/card drags, long-press sorting, mastery editing, temporary-guide isolation, frame-by-frame dialog positioning, backup recovery and light/dark layouts at desktop and narrow widths. Tests use synthetic libraries and isolated profiles.
+The v2.0 release passed **51 unit tests and 38 packaged Electron regression groups** with no page errors. Coverage includes real word/card drags, long-press sorting, mastery editing, temporary-guide isolation, frame-by-frame dialog positioning, backup recovery and light/dark layouts at desktop and narrow widths. Tests use synthetic libraries and isolated profiles.
 
 Set `LEXICON_EXE` to test a packaged executable and `LEXICON_ARTIFACT_DIR` to choose a report directory. `npm run test:guide` and `npm run test:motion` run the focused suites. The legacy desktop/unified/synonyms test entry points forward to the current v2 regression.
 
-Full-repository ESLint still reports 15 existing errors and one warning; it is not a passing check. The focused guide and shared-dialog checks pass. The Windows review installer is unsigned.
+Full-repository ESLint still reports 15 existing errors and one warning; it is not a passing check. The focused guide and shared-dialog checks pass. The Windows installer is unsigned.
+
+## Repository layout
+
+`src/` contains the application, `electron/` the desktop host, `public/wordnet/` the offline index, `scripts/` the build/data tools, `docs/` the technical notes and licences, and `tests/` the regression suites. Generated packages and personal profiles are excluded from Git. See [Repository structure](docs/STRUCTURE.md).
 
 ## Licence
 

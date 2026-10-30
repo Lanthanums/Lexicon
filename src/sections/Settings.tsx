@@ -1,4 +1,5 @@
 import Appearance from '@/sections/Appearance'
+import { APP_VERSION, APP_VERSION_LABEL } from '@/lib/version'
 import SynonymSettings from '@/sections/SynonymSettings'
 import { Database, LibraryBig, SlidersHorizontal, BookOpen, CircleHelp, Download, Upload } from 'lucide-react'
 import DataTransfer, {OpenDataFolder} from '@/sections/DataTransfer'
@@ -682,7 +683,7 @@ export default function Settings({
       <h3 className="settings-category">关于</h3>
       <section className="settings-card settings-help" aria-labelledby="help-title">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div><h3 id="help-title" className="settings-title"><CircleHelp size={18} />帮助与关于</h3><p className="settings-description">Lexicon v2.0 beta2</p></div>
+          <div><h3 id="help-title" className="settings-title"><CircleHelp size={18} />帮助与关于</h3><p className="settings-description" data-app-version={APP_VERSION}>Lexicon {APP_VERSION_LABEL}</p></div>
           <Button variant="outline" onClick={onReplayTour}>互动使用教学</Button>
         </div>
         <p className="mt-4 text-sm leading-6 text-muted-foreground">查词依赖所选服务的网络与可用性。无法查询时，可手动填写释义；已保存的词库和抽查可离线使用。录入时统一检查形近与近义关系；候选接近时由你确认。</p>

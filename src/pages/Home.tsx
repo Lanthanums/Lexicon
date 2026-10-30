@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { BookOpen, CalendarDays, LibraryBig, Settings2, SquareCheckBig } from 'lucide-react'
 import { LibraryProvider, useLibrary } from '@/store/library'
 import LearningNotice from '@/sections/LearningNotice'
+import { APP_VERSION, APP_VERSION_LABEL } from '@/lib/version'
 import Tour from '@/sections/Tour'
 import {createGuideLibrary,GuidedTourContext,markTourDone,tourDone,type GuideTask} from '@/lib/tutorial'
 
@@ -43,7 +44,7 @@ export default function Home() {
             <t.icon size={18} strokeWidth={1.6} /><span>{t.label}</span>{tab === t.id && <span className="ml-auto hidden size-1.5 rounded-full bg-primary lg:block" />}
           </button>)}
         </nav>
-        <div className="mt-auto hidden px-3 pt-10 lg:block"><div className="h-px bg-border" /><p className="mt-5 font-word text-lg italic text-muted-foreground">A word at a time.</p><p className="mt-2 text-xs leading-6 text-muted-foreground">已收藏 {Object.keys(state.words).length} 个单词<br />v2.0 beta2 · 本地保存</p></div>
+        <div className="mt-auto hidden px-3 pt-10 lg:block"><div className="h-px bg-border" /><p className="mt-5 font-word text-lg italic text-muted-foreground">A word at a time.</p><p className="mt-2 text-xs leading-6 text-muted-foreground">已收藏 {Object.keys(state.words).length} 个单词<br /><span data-app-version={APP_VERSION}>{APP_VERSION_LABEL}</span> · 本地保存</p></div>
       </aside>
       <div className="mx-auto w-full px-5 pb-16 pt-7 sm:px-9 lg:px-12 lg:pt-10">
         <header className="mb-8 flex items-center justify-between gap-3 border-b pb-6"><div><p className="mb-2 text-[10px] tracking-[0.2em] text-primary">LEXICON / {String(TABS.indexOf(active) + 1).padStart(2, '0')}</p><h2 className="text-2xl font-medium tracking-tight">{active.label}</h2><p className="mt-2 text-sm text-muted-foreground">{active.sub}</p></div><span className="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="size-1.5 rounded-full bg-emerald-600" />{window.lexicon ? '桌面版' : '本地词库'}</span></header>

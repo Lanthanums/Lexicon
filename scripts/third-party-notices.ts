@@ -8,7 +8,7 @@ export function thirdPartyNotices(): Plugin {
     name: 'third-party-notices',
     generateBundle() {
       const packages = new Map<string, string>()
-      packages.set('shadcn/ui (component templates)', readFileSync(path.resolve('build/licenses/shadcn-ui-LICENSE.txt'), 'utf8').trim())
+      packages.set('shadcn/ui (component templates)', readFileSync(path.resolve('docs/licenses/shadcn-ui-LICENSE.txt'), 'utf8').trim())
       const missing: string[] = []
       for (const raw of this.getModuleIds()) {
         if (raw.includes('\0')) continue
@@ -23,9 +23,9 @@ export function thirdPartyNotices(): Plugin {
           const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
           const files = readdirSync(root, { withFileTypes: true }).filter(f => f.isFile() && /^(licen[cs]e|copying|notice)(\.|$|-)/i.test(f.name))
           const texts = files.map(f => readFileSync(path.join(root, f.name), 'utf8').trim())
-          if (!texts.length && name === 'victory-vendor') texts.push(readFileSync(path.resolve('build/licenses/victory-vendor-LICENSE.txt'), 'utf8').trim())
-          if (!texts.length && name === 'react-remove-scroll-bar') texts.push(readFileSync(path.resolve('build/licenses/react-remove-scroll-bar-LICENSE.txt'), 'utf8').trim())
-          if (!texts.length && name.startsWith('@radix-ui/')) texts.push(readFileSync(path.resolve('build/licenses/radix-ui-LICENSE.txt'), 'utf8').trim())
+          if (!texts.length && name === 'victory-vendor') texts.push(readFileSync(path.resolve('docs/licenses/victory-vendor-LICENSE.txt'), 'utf8').trim())
+          if (!texts.length && name === 'react-remove-scroll-bar') texts.push(readFileSync(path.resolve('docs/licenses/react-remove-scroll-bar-LICENSE.txt'), 'utf8').trim())
+          if (!texts.length && name.startsWith('@radix-ui/')) texts.push(readFileSync(path.resolve('docs/licenses/radix-ui-LICENSE.txt'), 'utf8').trim())
           if (!texts.length) { missing.push(name); continue }
           packages.set(`${pkg.name}@${pkg.version}`, `License: ${typeof pkg.license === 'string' ? pkg.license : 'See license text'}\n\n${texts.join('\n\n')}`)
         } catch (error) {

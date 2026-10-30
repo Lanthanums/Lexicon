@@ -1,4 +1,5 @@
-import { thirdPartyNotices } from './build/third-party-notices'
+import { thirdPartyNotices } from './scripts/third-party-notices'
+import { readFileSync } from 'node:fs'
 import path from "path"
 import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
@@ -42,8 +43,11 @@ function fwdProxy(): Plugin {
 }
 
 // https://vite.dev/config/
+const packageInfo = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(packageInfo.version) },
   plugins: [react(), fwdProxy(), thirdPartyNotices()],
   server: {
     port: 3000,

@@ -39,6 +39,12 @@ test('real WordNet senses preserve polysemy, normalization and literal construct
   assert.ok(sensesFor('constructor', shard('c')).some(s => s.terms.includes('builder')))
   assert.deepEqual(sensesFor('zzzz-not-a-lexicon-word', shard('z')), [])
   assert.ok(!sensesFor('hot', shard('h')).some(s => s.terms.includes('cold')))
+  const fatal = sensesFor('fatal', shard('f'))
+  const lethal = sensesFor('lethal', shard('l'))
+  assert.ok(fatal.some(s => s.related && s.terms.includes('lethal')))
+  assert.ok(lethal.some(s => s.related && s.terms.includes('fatal')))
+  assert.ok(!lethal.some(s => s.terms.includes('terminal')))
+  assert.ok(!fatal.some(s => s.terms.includes('leather')))
 })
 
 test('API verification uses rel_syn and only reports returned lemmas', async () => {

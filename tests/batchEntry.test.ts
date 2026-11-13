@@ -26,3 +26,21 @@ test('new memory metadata round-trips and malformed memory plans reject the enti
     assert.throws(()=>normalizeState(invalid,s))
   }
 })
+
+test('pasted lines normalize fullwidth letters, apostrophes and spaces; huge terms are flagged', () => {
+  const oversized = 'a'.repeat(20000)
+  assert.deepEqual(parseEntries(`ＣＡＮ’Ｔ\rice   cream\r\ncan't；well-known;bad -;${oversized}`), {
+    words: ["can't", 'ice cream', 'well-known'], invalid: ['bad -', oversized], repeated: ["can't"],
+  })
+})
+
+test('an old spelling variant is detected without replacing its record', () => {
+  const s = blank()
+  const plan = { shape: [], near: [], nearStatus: '' }
+  insertPlanned(s, { text: 'CAN’T', gloss: '原义', meanings: [], source: 'manual' }, plan, '', '', 'old', 1, '2026-11-13')
+  const result = insertPlanned(s, { text: "can't", gloss: '新义', meanings: [], source: 'manual' }, plan, '', '', 'new', 2, '2026-11-13')
+  assert.equal(result.id, 'old')
+  assert.equal(result.duplicate, true)
+  assert.equal(s.words.old.gloss, '原义')
+  assert.equal(s.words.new, undefined)
+})

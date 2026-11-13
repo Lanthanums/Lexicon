@@ -10,53 +10,49 @@ export function editDistance(a: string, b: string): number {
   const n = b.length
   if (m === 0) return n
   if (n === 0) return m
-  const d: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
-  )
+  // Optimal string alignment only reads the two preceding rows.
+  if (n > m) return editDistance(b, a)
+  let older = new Uint32Array(n + 1)
+  let previous = Uint32Array.from({ length: n + 1 }, (_, j) => j)
+  let current = new Uint32Array(n + 1)
   for (let i = 1; i <= m; i++) {
+    current[0] = i
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      d[i][j] = Math.min(
-        d[i - 1][j] + 1,
-        d[i][j - 1] + 1,
-        d[i - 1][j - 1] + cost,
-      )
-      if (
-        i > 1 &&
-        j > 1 &&
-        a[i - 1] === b[j - 2] &&
-        a[i - 2] === b[j - 1]
-      ) {
-        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1)
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        current[j] = Math.min(current[j], older[j - 2] + 1)
       }
     }
+    const reusable = older
+    older = previous
+    previous = current
+    current = reusable
   }
-  return d[m][n]
+  return previous[n]
 }
 
 function longestCommonSubstring(a: string, b: string): number {
   const m = a.length
   const n = b.length
   if (m === 0 || n === 0) return 0
-  let prev = new Array<number>(n + 1).fill(0)
+  if (n > m) return longestCommonSubstring(b, a)
+  const lengths = new Uint32Array(n + 1)
   let best = 0
   for (let i = 1; i <= m; i++) {
-    const cur = new Array<number>(n + 1).fill(0)
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        cur[j] = prev[j - 1] + 1
-        if (cur[j] > best) best = cur[j]
-      }
+    for (let j = n; j >= 1; j--) {
+      lengths[j] = a[i - 1] === b[j - 1] ? lengths[j - 1] + 1 : 0
+      if (lengths[j] > best) best = lengths[j]
     }
-    prev = cur
   }
   return best
 }
 
-function commonPrefix(a: string, b: string): number {
-  let i = 0
-  while (i < a.length && i < b.length && a[i] === b[i]) i++
-  return i
+function commonPrefix(a: string, b: string, offsetA = 0, offsetB = 0): number {
+  let length = 0
+  while (offsetA + length < a.length && offsetB + length < b.length &&
+         a[offsetA + length] === b[offsetB + length]) length++
+  return length
 }
 
 function commonSuffix(a: string, b: string): number {
@@ -95,20 +91,39 @@ export function wordSimilarity(
   const pa = normalizePhonetic(phonA)
   const pb = normalizePhonetic(phonB)
   const homophone = pa !== '' && pa === pb && a !== b
-  if (a === b) return { score: 1, homophone: false }
+  if (a === b || homophone) return { score: 1, homophone }
 
   const maxLen = Math.max(a.length, b.length)
   const levSim = 1 - editDistance(a, b) / maxLen
   const lcsRatio = longestCommonSubstring(a, b) / maxLen
-  const edge =
-    (commonPrefix(a, b) + commonSuffix(a, b)) / (2 * maxLen)
+  const prefix = commonPrefix(a, b)
+  const edge = (prefix + commonSuffix(a, b)) / (2 * maxLen)
 
   // Edit similarity sets the floor ("one letter off" in a 5-letter word is
   // already 0.8); shared runs & shared edges push look-alikes higher.
   const blend = 0.62 * levSim + 0.23 * lcsRatio + 0.15 * edge
-  const score = Math.max(levSim, blend)
+  // Compare substantial shared beginnings, allowing a single extra letter
+  // after the first two characters (e.g. leth- and leath-).
+  const sharedStart = prefix < 2 ? prefix : prefix + Math.max(
+    commonPrefix(a, b, prefix + 1, prefix),
+    commonPrefix(a, b, prefix, prefix + 1),
+  )
+  const prefixScore = sharedStart >= 4 && sharedStart * 2 >= maxLen
+    ? levSim + (1 - levSim) * (sharedStart / maxLen) * 0.6
+    : levSim
+  const score = Math.max(prefixScore, blend)
 
   return { score: homophone ? 1 : score, homophone }
+}
+
+/** A length mismatch bounds both edit similarity and the blended score. */
+export function canMatchShape(a: string, b: string, pa: string, pb: string, threshold: number): boolean {
+  if (a === b || (pa && pa === pb)) return true
+  // Preserve old long entries; skip quadratic spelling comparison for them.
+  if (Math.max(a.length, b.length) > 256) return false
+  const max = Math.max(a.length, b.length)
+  const ratio = Math.min(a.length, b.length) / max
+  return ratio + (1 - ratio) * ratio * 0.6 + Number.EPSILON >= threshold
 }
 
 /* ---------------- clustering ---------------- */
@@ -151,8 +166,13 @@ export function clusterWords(
     for (let i = 1; i < ids.length; i++) union(ids[0], ids[i])
   }
 
+  // Explicitly curated groups retain their members and order.
+  const locked = new Set(lockedSets.flat())
+  const pronunciations = words.map(word => normalizePhonetic(word.phonetic))
   for (let i = 0; i < words.length; i++) {
+    if (locked.has(words[i].id)) continue
     for (let j = i + 1; j < words.length; j++) {
+      if (locked.has(words[j].id) || find(i) === find(j) || !canMatchShape(words[i].text, words[j].text, pronunciations[i], pronunciations[j], threshold)) continue
       const { score, homophone } = wordSimilarity(
         words[i].text,
         words[j].text,
@@ -169,5 +189,7 @@ export function clusterWords(
     if (!buckets.has(r)) buckets.set(r, [])
     buckets.get(r)!.push(w.id)
   })
-  return [...buckets.values()]
+  const ordered = new Map(lockedSets.filter(ids => ids.length && index.has(ids[0]))
+    .map(ids => [find(index.get(ids[0])!), ids.filter(id => index.has(id))]))
+  return [...buckets].map(([root, ids]) => ordered.get(root) ?? ids)
 }

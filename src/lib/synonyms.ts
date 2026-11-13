@@ -3,6 +3,7 @@ export interface SynonymSense {
   pos: string
   definition: string
   terms: string[]
+  related?: true
 }
 export interface SynonymShard {
   lookup: Record<string, string[]>

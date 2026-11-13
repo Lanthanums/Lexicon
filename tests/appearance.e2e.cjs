@@ -22,6 +22,76 @@ async function dark(expected) {
 async function noOverflow() {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
 }
+async function checkQuizSetup(theme) {
+  const modes = page.getByRole('group', { name: '考查方式' })
+  const panel = page.locator('.quiz-start-panel')
+  for (const width of [1920, 1280, 820, 390]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await modes.waitFor()
+    const buttons = await modes.getByRole('button').evaluateAll(elements => elements.map(element => {
+      const {x, y, width, height} = element.getBoundingClientRect()
+      return {x, y, width, height}
+    }))
+    assert.equal(buttons.length, 6)
+    for (let row = 0; row < 3; row++) {
+      const [left, right] = buttons.slice(row * 2, row * 2 + 2)
+      assert.equal(left.y, right.y)
+      assert.ok(Math.abs(left.width - right.width) < 1)
+      assert.equal(left.height, right.height)
+      assert.ok(right.x > left.x)
+      if (row > 0) assert.ok(left.y > buttons[(row - 1) * 2].y)
+    }
+    const modeBounds = await modes.boundingBox()
+    const panelBounds = await panel.boundingBox()
+    const label = await page.locator('#quiz-mode-label').boundingBox()
+    assert.ok(modeBounds.y - label.y - label.height >= 12)
+    if (width >= 1200) {
+      assert.ok(Math.abs(modeBounds.y - panelBounds.y) < 1)
+      assert.ok(Math.abs(modeBounds.height - panelBounds.height) < 1)
+      assert.ok(panelBounds.x > modeBounds.x + modeBounds.width)
+    } else {
+      assert.ok(panelBounds.y - modeBounds.y - modeBounds.height >= 12)
+    }
+    await noOverflow()
+    const note = page.getByText('按日终统计，单位：词。', { exact: true })
+    const empty = page.getByText('还没有复习计划', { exact: true }).locator('..')
+    const noteBounds = await note.boundingBox()
+    const emptyBounds = await empty.boundingBox()
+    assert.ok(emptyBounds.y - noteBounds.y - noteBounds.height >= 15)
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await shot('beta2-quiz-layout-' + theme)
+}
+
+async function checkSticky(theme) {
+  const sticky = page.locator('.management-sticky')
+  await sticky.waitFor()
+  for (const width of [1440, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.evaluate(() => window.scrollTo(0, 0))
+    const before = await sticky.boundingBox()
+    await page.evaluate(() => window.scrollTo(0, 670))
+    await page.waitForFunction(() => Math.abs(document.querySelector('.management-sticky').getBoundingClientRect().top) < 1)
+    const after = await sticky.boundingBox()
+    const effect = await sticky.evaluate(element => {
+      const glow = getComputedStyle(element, '::before')
+      return { filter: glow.backdropFilter, mask: glow.maskImage, pointerEvents: glow.pointerEvents }
+    })
+    assert.ok(Math.abs(before.height - after.height) < 1)
+    assert.equal(effect.filter, 'blur(14px)')
+    assert.match(effect.mask, /linear-gradient/)
+    assert.equal(effect.pointerEvents, 'none')
+    assert.equal(await sticky.getByRole('textbox', { name: '录入英文单词' }).isVisible(), true)
+    await noOverflow()
+    if (width === 1440 || width === 390) {
+      const name = `beta2-sticky-${theme}-${width}.png`
+      await page.screenshot({ path: path.join(out, name), animations: 'disabled' })
+      report.screenshots.push(name)
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
+}
+
 async function launch() {
   app = await electron.launch({ executablePath: process.env.LEXICON_EXE || undefined, args: process.env.LEXICON_EXE ? [] : [root], env: { ...process.env, LEXICON_TEST_DATA: profile } })
   page = await app.firstWindow()
@@ -82,7 +152,7 @@ async function launch() {
   await page.getByRole('alertdialog').getByRole('button', { name: '确认导入', exact: true }).click()
   await page.getByText('备份已导入', { exact: true }).waitFor()
   await nav('综合抽查')
-  await shot('16-quiz-setup-dark')
+  await checkQuizSetup('dark')
   await page.getByRole('button', { name: '看中文 · 选英文 再认练习', exact: true }).click()
   await page.getByRole('button', { name: /^开始/  }).click()
   while (!(await page.locator('.quiz-prompt-text').textContent()).includes('房地产')) {
@@ -109,11 +179,38 @@ async function launch() {
   await page.locator('.quiz-option').filter({ hasText: 'propriety' }).click()
   await page.getByRole('button', { name: /^(下一题（Enter）|查看本轮结果)$/ }).waitFor()
   await shot('20-quiz-feedback-light')
+  await page.getByRole('button', { name: '结束本轮', exact: true }).click()
+  await page.locator('.quiz-setup').waitFor()
+  await nav('设置与备份')
+  await page.locator('input[type=file]').setInputFiles({ name: 'layout-fixture.json', mimeType: 'application/json', buffer: Buffer.from(fixture) })
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认导入', exact: true }).click()
+  await page.getByText('备份已导入', { exact: true }).last().waitFor()
+  await nav('综合抽查')
+  await checkQuizSetup('light')
+  check('Six modes form a 2×3 grid, the start panel aligns on desktop, and forecast empty states have breathing room in both themes')
   await nav('设置与备份')
   for (const width of [820, 390]) {
     await page.setViewportSize({ width, height: 900 }); await noOverflow(); await shot('21-settings-light-' + width)
   }
   await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.getByRole('button', { name: /^深色 / }).click(); await dark(true)
+  const management = JSON.parse(fixture)
+  for (let i = 0; i < 48; i++) {
+    const id = 'isolated-' + i
+    management.words[id] = { id, text: 'example ' + i, gloss: '词库示例', meanings: [], source: 'manual', groupId: id, addedAt: i + 10 }
+    management.groups[id] = { id, wordIds: [id], manual: false, createdAt: i + 10 }
+  }
+  await page.locator('input[type=file]').setInputFiles({ name: 'scroll-fixture.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(management)) })
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认导入', exact: true }).click()
+  await page.getByText('备份已导入', { exact: true }).last().waitFor()
+  await nav('录入与管理词汇')
+  await checkSticky('dark')
+  await nav('设置与备份')
+  await page.getByRole('button', { name: /^浅色 / }).click(); await dark(false)
+  await nav('录入与管理词汇')
+  await checkSticky('light')
+  check('Sticky entry and library toolbar retain their dimensions while a feathered, click-through blur covers the scrolling cards')
+  await nav('设置与备份')
   await page.getByRole('button', { name: /^深色 / }).click(); await dark(true)
   for (const name of ['今日学习', '录入与管理词汇', '综合抽查', '设置与备份']) {
     await nav(name); await noOverflow(); await shot('22-dark-' + name)

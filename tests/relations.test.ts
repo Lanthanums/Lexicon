@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {reconcileRelations,undoPatch,restoreDeletedWord} from '../src/lib/relations'
+import {archiveDissolvedRelations,reconcileRelations,undoPatch,restoreDeletedWord} from '../src/lib/relations'
 import {deriveManagementView,managementWords} from '../src/lib/managementView'
 import type {LibraryState} from '../src/types/index'
 const fixture=():LibraryState=>({words:{a:{id:'a',text:'calm',gloss:'平静',meanings:[],groupId:'g',addedAt:1,source:'manual'},b:{id:'b',text:'balm',gloss:'膏',meanings:[],groupId:'g',addedAt:2,source:'manual'},c:{id:'c',text:'serene',gloss:'宁静',meanings:[],groupId:'c',addedAt:3,source:'manual'}},groups:{g:{id:'g',wordIds:['a','b'],manual:true,createdAt:1},c:{id:'c',wordIds:['c'],kind:'single',manual:false,createdAt:3}},synonymSets:{s:{id:'s',name:'平静',notes:'原始笔记',wordIds:['a','c'],createdAt:1}},stats:{},settings:{threshold:.7,dictProviders:[]},learning:{enabled:false,addCount:0,traces:[]},activity:{}})
@@ -35,4 +35,29 @@ test('conflicting deletion undo can recover the word independently without repla
  assert.deepEqual(recovered.groups.g.wordIds,['b','c']);assert.deepEqual(recovered.stats.a,before.stats.a)
  assert.equal(recovered.words.a.gloss,'平静');assert.equal(deriveManagementView(recovered).relations.a.isolated,true)
  assert.throws(()=>restoreDeletedWord(before,recovered,'a'))
+})
+
+test('undo cannot resurrect a deleted word after its spelling was added again', () => {
+  const before = fixture()
+  const after = structuredClone(before)
+  delete after.words.a
+  const current = structuredClone(after)
+  current.words.new = { ...before.words.a, id: 'new', text: 'ＣＡＬＭ', groupId: 'new' }
+  assert.throws(() => undoPatch(before, after, current), /同名词/)
+  assert.throws(() => restoreDeletedWord(before, current, 'a'), /同名词/)
+})
+
+test('dissolved relation notes are archived and undo removes only its own archive entry', () => {
+  const before = fixture()
+  const draft = structuredClone(before)
+  draft.synonymSets.s.wordIds = ['a']
+  const after = reconcileRelations(draft)
+  archiveDissolvedRelations(before, after)
+  assert.equal(after.relationArchive?.[0].notes, '原始笔记')
+  assert.deepEqual(after.relationArchive?.[0].wordIds, ['a', 'c'])
+  const current = structuredClone(after)
+  current.relationArchive!.push({ ...after.relationArchive![0], id: 'later' })
+  const undo = undoPatch(before, after, current)
+  assert.deepEqual(undo.synonymSets.s, before.synonymSets.s)
+  assert.deepEqual(undo.relationArchive?.map(group => group.id), ['later'])
 })

@@ -43,7 +43,7 @@ let app
   await page.getByRole('alertdialog').getByRole('button',{name:'确认导入',exact:true}).click()
   await page.getByText('备份已导入',{exact:true}).last().waitFor()
   await page.waitForTimeout(250)
-  await app.evaluate(()=>{globalThis.fetch=async()=>new Response(JSON.stringify({ec:{word:{trs:[{pos:'n.',tran:'黄油'}]}}}),{headers:{'content-type':'application/json'}})})
+  await app.evaluate(()=>{globalThis.fetch=async input=>new Response(JSON.stringify({input:new URL(String(input),'https://app.invalid').searchParams.get('q'),ec:{word:{trs:[{pos:'n.',tran:'黄油'}]}}}),{headers:{'content-type':'application/json'}})})
   await page.getByRole('navigation').getByRole('button',{name:'录入与管理词汇',exact:true}).click()
   await page.locator('input[placeholder="输入单词以添加"]:visible').fill('butter')
   await page.locator('section:not([hidden])').getByRole('button',{name:'查询并加入',exact:true}).click()

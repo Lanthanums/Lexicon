@@ -1,5 +1,5 @@
 const { app, BrowserWindow, protocol, ipcMain, shell, dialog, nativeTheme } = require('electron')
-const { readFile, writeFile, mkdir } = require('node:fs/promises')
+const { access, readFile, writeFile, mkdir } = require('node:fs/promises')
 const { replaceSnapshot } = require('./snapshot.cjs')
 const path = require('node:path')
 const { lookup } = require('node:dns/promises')
@@ -97,7 +97,25 @@ async function handleProtocol(request) {
 if (gotLock) app.whenReady().then(() => {
   protocol.handle('lexicon', handleProtocol)
   app.setAppUserModelId('local.lexicon.desktop')
-  ipcMain.handle('snapshot:before-import', async (e, raw) => { trusted(e); validSnapshot(raw); const dest = path.join(app.getPath('userData'), 'backups'); await mkdir(dest, { recursive: true }); await writeFile(path.join(dest, 'before-import-' + Date.now() + '.json'), raw) })
+  const beforeImportFile = path.join(app.getPath('userData'), 'backups', 'before-import-latest.json')
+  ipcMain.handle('snapshot:before-import', async (e, raw) => {
+    trusted(e); validSnapshot(raw)
+    const dest = path.dirname(beforeImportFile)
+    await mkdir(dest, { recursive: true })
+    const dated = path.join(dest, 'before-import-' + Date.now() + '.json')
+    await writeFile(dated, raw, { encoding: 'utf8', flag: 'wx' })
+    const staged = beforeImportFile + '.tmp'
+    await writeFile(staged, raw, 'utf8')
+    await replaceSnapshot(staged, beforeImportFile)
+  })
+  ipcMain.handle('snapshot:has-before-import', async e => {
+    trusted(e)
+    try { await access(beforeImportFile); return true } catch { return false }
+  })
+  ipcMain.handle('snapshot:load-before-import', async e => {
+    trusted(e)
+    try { return await readFile(beforeImportFile, 'utf8') } catch { return null }
+  })
   ipcMain.handle('snapshot:save', (e, raw) => { trusted(e); return saveSnapshot(raw) })
   ipcMain.handle('snapshot:load', async e => { trusted(e); try { return await readFile(dataFile(), 'utf8') } catch { return null } })
   ipcMain.handle('data:open', e => { trusted(e); return shell.openPath(app.getPath('userData')) })

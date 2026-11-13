@@ -1,4 +1,4 @@
-import type { DictProviderConfig, WordMeaning } from '@/types'
+import type { DictProviderConfig, Word, WordMeaning } from '@/types'
 import { md5 } from 'js-md5'
 
 /**
@@ -72,90 +72,91 @@ const stripHtml = (s: string) =>
 
 /* ---------- source 0: Youdao web dictionary (fast, via dev proxy) ---------- */
 
-interface YoudaoTr {
+interface YoudaoTranslation {
   pos?: string
   tran?: string
-}
-interface YoudaoResp {
-  ec?: {
-    word?: {
-      ukphone?: string
-      usphone?: string
-      trs?: YoudaoTr[]
-      'return-phrase'?: string
-    }
-  }
-  web_trans?: {
-    'web-translation'?: Array<{
-      trans?: Array<{ value?: string; summary?: { line?: string[] } }>
-    }>
-  }
+  tr?: { l?: { i?: string | string[] } }[]
 }
 
-interface YoudaoResult {
-  phonetic?: string
-  gloss: string
-  meanings: WordMeaning[]
+interface YoudaoEntry {
+  'return-phrase'?: string | { l?: { i?: string } }
+  ukphone?: string
+  usphone?: string
+  trs?: YoudaoTranslation[]
+  wfs?: { wf?: { value?: string } }[]
 }
 
-/**
- * Youdao's web dictionary endpoint — ~0.5s from CN networks and returns IPA
- * plus Chinese glosses with POS. It rejects cross-origin browser requests,
- * so it is reached through the dev-server proxy at /youdao.
- *
- * Network failures THROW (so the caller can tell "offline" apart from
- * "no entry"); a response without the ec section falls back to the
- * web_trans network translations before declaring a miss.
- */
+interface YoudaoResponse {
+  input?: string
+  meta?: { input?: string }
+  ec?: { word?: YoudaoEntry | YoudaoEntry[] }
+  simple?: { word?: YoudaoEntry | YoudaoEntry[] }
+  web_trans?: { 'web-translation'?: unknown[] }
+}
+
+class UnverifiedYoudaoEntry extends Error {}
+
+function normalizeHeadword(value?: string): string {
+  return typeof value === 'string'
+    ? value.normalize('NFKC').trim().toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ')
+    : ''
+}
+
+function matchesYoudaoEntry(entry: YoudaoEntry, text: string): boolean {
+  const phrase = entry['return-phrase']
+  const headword = typeof phrase === 'string' ? phrase : phrase?.l?.i
+  return normalizeHeadword(headword) === text ||
+    (entry.wfs ?? []).some(form => normalizeHeadword(form.wf?.value) === text)
+}
+
+function youdaoMeanings(translation: YoudaoTranslation): WordMeaning[] {
+  if (translation.tran?.trim()) {
+    return [{ pos: translation.pos?.trim() ?? '', en: '', zh: translation.tran.trim() }]
+  }
+  return (translation.tr ?? []).flatMap(part => part.l?.i ?? []).map(value => {
+    const gloss = value.trim()
+    const pos = gloss.match(/^([a-z]+(?:[./][a-z]+)*\.)\s*/i)?.[0] ?? ''
+    return { pos: pos.trim(), en: '', zh: gloss.slice(pos.length) }
+  })
+}
+
 async function youdaoLookup(
   word: string,
   signal?: AbortSignal,
-): Promise<YoudaoResult | null> {
+): Promise<LookupResult | null> {
   const res = await fetchWithTimeout(
     `/youdao/jsonapi_s?doctype=json&jsonversion=4&q=${encodeURIComponent(word)}`,
     8000,
     signal,
   )
   if (!res.ok) throw new Error(`Youdao request failed (${res.status})`)
-  const data = (await res.json()) as YoudaoResp
-  const w = data.ec?.word
-  const meanings: WordMeaning[] = (w?.trs ?? [])
-    .filter((t) => t.tran && t.tran.trim())
-    // drop proper-noun noise like "（Rode）人名，英、法、德…译作"罗德""
-    .filter((t) => !/人名|译作|姓氏|地名/.test(t.tran!))
+  const data = (await res.json()) as YoudaoResponse
+  const requested = normalizeHeadword(word)
+  const echoes = [data.input, data.meta?.input].map(normalizeHeadword).filter(Boolean)
+  // HTTP 200 can contain a complete dictionary entry for an unrelated query.
+  if (echoes.some(echo => echo !== requested)) throw new UnverifiedYoudaoEntry()
+
+  const entries = [data.ec?.word ?? []].flat()
+  const simple = [data.simple?.word ?? []].flat()
+  const simpleMatches = simple.some(entry => matchesYoudaoEntry(entry, requested))
+  const entry = entries.find(candidate =>
+    matchesYoudaoEntry(candidate, requested) ||
+    (!candidate['return-phrase'] && (simpleMatches || (!simple.length && echoes.length > 0))))
+  const meanings = (entry?.trs ?? []).flatMap(youdaoMeanings)
+    .filter(meaning => meaning.zh && !/人名|译作|姓氏|地名/.test(meaning.zh))
     .slice(0, 4)
-    .map((t) => ({
-      pos: t.pos?.trim() ?? '',
-      en: '',
-      zh: t.tran!.trim(),
-    }))
-  if (meanings.length > 0) {
-    const phone = w?.ukphone || w?.usphone
-    return {
-      phonetic: phone ? `/${phone}/` : undefined,
-      gloss: meanings
-        .slice(0, 2)
-        .map((m) => m.zh!)
-        .join('；'),
-      meanings,
-    }
+  if (!meanings.length) {
+    // Web translations alone lack a verified dictionary entry.
+    if ((!entry && (entries.length || (simple.length && !simpleMatches))) ||
+        data.web_trans?.['web-translation']?.length) throw new UnverifiedYoudaoEntry()
+    return null
   }
-  // fallback: web_trans network translations (skip work titles like 《火线对峙》)
-  const webValues: string[] = []
-  for (const entry of data.web_trans?.['web-translation'] ?? []) {
-    for (const t of entry.trans ?? []) {
-      const v = t.value?.trim()
-      if (!v || v.length > 8) continue
-      if (t.summary?.line?.some((l) => l.includes('《'))) continue
-      if (!webValues.includes(v)) webValues.push(v)
-      if (webValues.length >= 3) break
-    }
-    if (webValues.length >= 3) break
-  }
-  if (webValues.length === 0) return null
+  const phone = entry?.ukphone?.trim() || entry?.usphone?.trim()
   return {
-    gloss: webValues.join('；'),
-    meanings: webValues.map((v) => ({ pos: '', en: '', zh: v })),
+    text: word,
+    phonetic: phone ? `/${phone}/` : undefined,
+    gloss: meanings.slice(0, 2).map(meaning => meaning.zh).join('；'),
+    meanings,
   }
 }
 
@@ -315,46 +316,43 @@ async function customLookup(
 
 /* ---------- provider: wiktionary chain (slow fallback) ---------- */
 
-/** session circuit breaker for the wiktionary hosts ONLY: en.wiktionary.org
-    is unreachable from some networks (DNS poisoning) and dictionaryapi.dev
-    can hang for 20s+ — after the first hard network failure, skip the
-    wiktionary sub-requests for the rest of this session. MyMemory is a
-    different host and stays live either way. */
+/** Skip the Wiktionary host after a hard network failure in this session. */
 let wiktionaryDown = false
 
 /**
  * Fallback chain. Every sub-source is optional and fails soft:
  *
- *  - wiktionaryMeanings: null = definitive miss (404), undefined = host
- *    unreachable, array = definitions
- *  - MyMemory gloss is always attempted on its own, so a word can still be
- *    added (gloss-only) when wiktionary is blocked but MyMemory works
- *  - only a definitive 404 miss with no usable gloss reports "not found"
+ *  - Wiktionary and Dictionary API can both supply English definitions.
+ *  - MyMemory supplies the Chinese gloss, including when Wiktionary is unreachable.
+ *  - A Wiktionary miss is conclusive only when Dictionary API has no entry either.
  */
 async function wiktionaryChain(
   text: string,
   signal?: AbortSignal,
 ): Promise<LookupResult | null> {
-  const [meanings, phonA, phonB] = await Promise.all([
+  const [wiktMeanings, dictionaryEntry, wiktPhonetic, gloss] = await Promise.all([
     wiktionaryMeanings(text, signal),
-    dictApiPhonetic(text, signal),
+    dictionaryApiLookup(text, signal),
     wiktionaryIpa(text, signal),
+    translateZh(text, signal),
   ])
-  if (meanings === null) return null // wiktionary reachable: no such word
-  const phonetic = phonA ?? phonB
-
-  const gloss = await translateZh(text, signal)
-  if (meanings && meanings.length > 0) {
-    const defZh = await Promise.all(
-      meanings.slice(0, 3).map((m) => translateZh(m.en, signal)),
-    )
-    meanings.forEach((m, i) => {
-      if (defZh[i]) m.zh = defZh[i]
-    })
+  if (wiktMeanings === null && !dictionaryEntry) return null
+  const meanings = wiktMeanings?.length ? wiktMeanings : dictionaryEntry?.meanings ?? []
+  const phonetic = dictionaryEntry?.phonetic ?? wiktPhonetic
+  if (meanings.length > 0) {
+    // Give each part of speech a translation slot before translating additional senses.
+    const representatives = meanings.filter((meaning, index) =>
+      meanings.findIndex(candidate => candidate.pos === meaning.pos) === index)
+    const selected = [...new Set([...representatives, ...meanings])].slice(0, 3)
+    await Promise.all(selected.map(async meaning => {
+      const translation = await translateZh(meaning.en, signal)
+      if (translation) meaning.zh = translation
+    }))
+    const translatedSenses = [...new Set(selected.flatMap(meaning => meaning.zh ? [meaning.zh] : []))]
     return {
       text,
       phonetic,
-      gloss: gloss || meanings[0].zh || meanings[0].en,
+      gloss: gloss || translatedSenses.slice(0, 2).join('；') || meanings[0].en,
       meanings,
     }
   }
@@ -416,7 +414,7 @@ async function wiktionaryMeanings(
   return meanings
 }
 
-/* ---------- source 2: dictionaryapi.dev phonetic (optional) ---------- */
+/* ---------- source 2: dictionaryapi.dev definitions and phonetic ---------- */
 
 interface DictApiEntry {
   phonetic?: string
@@ -427,22 +425,29 @@ interface DictApiEntry {
   }>
 }
 
-async function dictApiPhonetic(
+async function dictionaryApiLookup(
   word: string,
   signal?: AbortSignal,
-): Promise<string | undefined> {
+): Promise<Pick<LookupResult, 'phonetic' | 'meanings'> | undefined> {
   try {
-    const res = await fetchWithTimeout(
+    const res = await fwdFetch(
       `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`,
-      2500,
+      12000,
       signal,
     )
     if (!res.ok) return undefined
     const entries = (await res.json()) as DictApiEntry[]
-    const e = entries[0]
-    return (
-      e?.phonetic ?? e?.phonetics?.find((p) => p.text && p.text.trim())?.text
-    )
+    const phonetic = entries.flatMap(entry => [
+      entry.phonetic,
+      ...(entry.phonetics ?? []).map(item => item.text),
+    ]).find(value => value?.trim())?.trim()
+    const meanings = entries.flatMap(entry => (entry.meanings ?? []).flatMap(meaning =>
+      meaning.definitions.slice(0, 2).map(({ definition }) => ({
+        pos: posAbbrev(meaning.partOfSpeech),
+        en: stripHtml(definition),
+      })),
+    )).filter(meaning => meaning.en).slice(0, 4)
+    return phonetic || meanings.length ? { phonetic, meanings } : undefined
   } catch {
     return undefined
   }
@@ -484,7 +489,7 @@ async function translateZh(text: string, signal?: AbortSignal): Promise<string> 
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(
       text,
     )}&langpair=en|zh-CN`
-    const res = await fetchWithTimeout(url, 8000, signal)
+    const res = await fwdFetch(url, 12000, signal)
     if (!res.ok) return ''
     const data = (await res.json()) as {
       responseData?: { translatedText?: string }
@@ -492,7 +497,7 @@ async function translateZh(text: string, signal?: AbortSignal): Promise<string> 
     const t = data.responseData?.translatedText?.trim() ?? ''
     // MyMemory signals quota/limit problems inside the text itself, and on
     // a miss it sometimes echoes the source word back — both mean "no gloss"
-    if (!t || /QUERY LENGTH LIMIT|MYMEMORY WARNING|INVALID/i.test(t)) return ''
+    if (!/\p{Script=Han}/u.test(t) || /QUERY LENGTH LIMIT|MYMEMORY WARNING|INVALID/i.test(t)) return ''
     if (t.toLowerCase() === text.trim().toLowerCase()) return ''
     return t
   } catch {
@@ -539,10 +544,7 @@ async function runProvider(
 ): Promise<LookupResult | null> {
   switch (p.id) {
     case 'youdao-web': {
-      const yd = await youdaoLookup(word, signal)
-      return yd
-        ? { text: word, phonetic: yd.phonetic, gloss: yd.gloss, meanings: yd.meanings }
-        : null
+      return youdaoLookup(word, signal)
     }
     case 'baidu':
       return baiduLookup(word, p, signal)
@@ -560,14 +562,16 @@ async function lookupWithProviders(
   raw: string,
   signal?: AbortSignal,
   providers?: DictProviderConfig[],
+  accept: (result: LookupResult) => boolean = () => true,
 ): Promise<LookupResult> {
   const text = raw.trim().toLowerCase()
   if (!text) throw new WordNotFoundError(raw)
-  const chain = (providers?.length ? providers : DEFAULT_CHAIN).filter(
+  const chain = (providers ?? DEFAULT_CHAIN).filter(
     (p) => p.enabled,
   )
   let sawMiss = false
   let sawError = false
+  let needsVerifiedBackup = false
   for (const p of chain) {
     if (signal?.aborted) break
     // one retry for the fast primary provider — transient hiccups are common
@@ -576,13 +580,18 @@ async function lookupWithProviders(
       if (signal?.aborted) break
       try {
         const r = await runProvider(p, text, signal)
-        if (r) return r
+        if (r && accept(r) && (!needsVerifiedBackup || isUsableBackup(r))) return r
         sawMiss = true // provider answered, but has no entry
         break
       } catch (e) {
         if (signal?.aborted) break
+        if (e instanceof UnverifiedYoudaoEntry) {
+          sawMiss = true
+          needsVerifiedBackup = true
+          addBuiltInBackup(chain)
+          break
+        }
         sawError = true // network-level failure — try again / next provider
-        void e
       }
     }
   }
@@ -590,6 +599,34 @@ async function lookupWithProviders(
   // this is a network problem, not a missing word
   if (sawError && !sawMiss) throw new WordLookupNetworkError(text)
   throw new WordNotFoundError(text)
+}
+
+function hasUnverifiedGloss(result: Pick<LookupResult, 'phonetic' | 'gloss' | 'meanings'>): boolean {
+  if (result.phonetic?.trim() || result.meanings.some(meaning => meaning.en.trim())) return false
+  // Legacy web_trans imports could contain several untyped Chinese snippets.
+  return /^\p{Script=Han}+$/u.test(result.gloss.trim()) ||
+    result.meanings.every(meaning => !meaning.pos.trim())
+}
+
+function isUsableBackup(result: LookupResult): boolean {
+  return /\p{Script=Han}/u.test(result.gloss) && !hasUnverifiedGloss(result)
+}
+
+function addBuiltInBackup(providers: DictProviderConfig[]) {
+  if (!providers.some(provider => provider.id === 'wiktionary')) {
+    providers.push({ id: 'wiktionary', label: '', enabled: true })
+  }
+}
+
+export function needsDefinitionRetry(word: Word): boolean {
+  return word.source === 'api' && hasUnverifiedGloss(word)
+}
+
+export function retryDefinition(word: string, providers: DictProviderConfig[], signal?: AbortSignal) {
+  const backups = providers.filter(provider =>
+    provider.enabled && provider.id !== 'youdao-web' && provider.id !== 'youdao-cloud')
+  addBuiltInBackup(backups)
+  return lookupWithProviders(word, signal, backups, isUsableBackup)
 }
 
 const lookupCache = new Map<string, { at: number; result: LookupResult }>()

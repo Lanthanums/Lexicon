@@ -5,113 +5,113 @@
   "commit": "dc343f2683279ecbb13fab4e2fd778d7b162d287",
   "attribution": "Open English WordNet Team; derived from Princeton University WordNet",
   "license": "CC-BY-4.0; underlying Princeton WordNet License",
-  "modification": "Lowercase English lemmas only; multi-member synsets only; definitions retained; first-letter JSON shards. No inferred relations, generated explanations, examples or translations.",
-  "terms": 90243,
-  "synsets": 44710,
+  "modification": "Lowercase English lemmas; multi-member synsets and direct adjective similar links indexed by first letter. Linked records preserve both endpoint definitions and are marked related. No transitive links, generated explanations, examples or translations.",
+  "terms": 94125,
+  "synsets": 55432,
   "files": {
     "a.json": {
-      "bytes": 1148739,
-      "sha256": "1de44961815bbafb2eb97ac7091046c57888062cbec92a4217c2205d466002c2"
+      "bytes": 1565603,
+      "sha256": "35276ca5573087093ab92165916be6ae428262a361100be1be8b5d4297545dfd"
     },
     "b.json": {
-      "bytes": 1067938,
-      "sha256": "87bd4a8ad23ea32c80f46e4079541f93f9ead51c6c3ad3edb14c342e3c6f19f8"
+      "bytes": 1376636,
+      "sha256": "f60f05cf3c8b0054d881f42283b629a0feda2b0945691cda897f19ae09eecf0e"
     },
     "c.json": {
-      "bytes": 1768894,
-      "sha256": "0daeef6c339130fe56a73bddfd43aa5a8fd8ba52c1f9d3f95f8a32436d8d38c5"
+      "bytes": 2416553,
+      "sha256": "3681e99cb11eb6b62f52df2d1ac07eb7789548cbb6fd1453c979f2dfdcb212f6"
     },
     "d.json": {
-      "bytes": 911083,
-      "sha256": "a6c1719b794adbff171a2d9b26b373e730353c5331b04cf9300441f6b59fa452"
+      "bytes": 1318111,
+      "sha256": "4c1d2c23d33095f9c201addb3c076c094ea5b96dcc4272aa17e5b898beebc8be"
     },
     "e.json": {
-      "bytes": 683317,
-      "sha256": "11f3baf55ec313df773770a7ce15876abfee7174f5abf049f9bfc4755cc69281"
+      "bytes": 955966,
+      "sha256": "6a7526969a9469164072d23d5413318c2582d8b81b3b9ba8f761be40593b1a58"
     },
     "f.json": {
-      "bytes": 782909,
-      "sha256": "4a3ff7da2296d36f7cb7c5ea00bb4aac03991f6af763d36c1a73c11e3c21c48a"
+      "bytes": 1118776,
+      "sha256": "28ae70db99c81c3ef2bf586c353d82123a12ffd62228dff7c90d09ddc5d66886"
     },
     "g.json": {
-      "bytes": 649685,
-      "sha256": "daf66cc2adeba4819ac7649469e7a5f5e980d8d3a2ca72818c3d9733824cb954"
+      "bytes": 788769,
+      "sha256": "18792da9377c4855872c8b8d7210394d7f933b60a24b421e9c9ebf3dac70f901"
     },
     "h.json": {
-      "bytes": 677740,
-      "sha256": "6758d7307aeee8dc98d865744b8b8e66bc3c8a762a803af9d306d48a34345939"
+      "bytes": 927326,
+      "sha256": "93101f1bbefee9da4cfa29d2f96986581c52987235a376107388f3b78139fa18"
     },
     "i.json": {
-      "bytes": 595989,
-      "sha256": "85f96e8b8cc4569e9abb8cf48427f79096b966d1bf67271243364fae4d5b48f6"
+      "bytes": 1061695,
+      "sha256": "fb7ca1b5196b978a15aea9a8a6fbb83d45f9a2024a2ab5bb71f54cd3a24a6e82"
     },
     "j.json": {
-      "bytes": 165656,
-      "sha256": "01e87b0734d6c00441855eb1207a2abaf7c9dd6ce13be0bf7c487a3bf58ae88e"
+      "bytes": 195998,
+      "sha256": "2da14863af6cce1353f9ded66abdf45dcf17553797d7816abaf0f5200d96c96d"
     },
     "k.json": {
-      "bytes": 170801,
-      "sha256": "7d206e39d00b20304052221d65abf6188b3c8d869749e2e62f22bebf60736e77"
+      "bytes": 195333,
+      "sha256": "7bc8353cab3c244f427ab80954fed2fef0210c5b8b59bddb972def28b7d2569c"
     },
     "l.json": {
-      "bytes": 686648,
-      "sha256": "4dd64c3e9b6cb56dbee6d6a13999dd743c287bf86ff1a0adb51fb1398ce06de2"
+      "bytes": 947196,
+      "sha256": "c7d81c42e4f2827ba7d85a260562c2a60afe6c6becb63b2944ca672dc1fe0fa4"
     },
     "m.json": {
-      "bytes": 918861,
-      "sha256": "d9278a2ba0e9f9b6ed61719d2102b6af9d391534e64543dde762c8ee31dd88ea"
+      "bytes": 1174387,
+      "sha256": "01cb38ae492c4a3130290ad409dbdf5bf4021743ef40aff48405241b6eacf3e3"
     },
     "n.json": {
-      "bytes": 388101,
-      "sha256": "acf9f2a4f1ae904a134ea0692ec6879212ca1be3d550657b6feb28bf92d3d8d8"
+      "bytes": 595777,
+      "sha256": "3a7cde8bbf46957b97910712b6fbacdb0137c8430d7f40da03ac15c1d68db9e4"
     },
     "o.json": {
-      "bytes": 415736,
-      "sha256": "ff6a594bc2462436a8934839420aa750143be9edcb1592464535d5cf0c0150a2"
+      "bytes": 654840,
+      "sha256": "d1579ff2206dc88e19d3b1ae82e00c791e319a7528c69a26b68cafd572813350"
     },
     "p.json": {
-      "bytes": 1426621,
-      "sha256": "af5d62b9c7f99289c554ac03db568fabdf03a34fa13ea50a9a000b478ee647c0"
+      "bytes": 1860017,
+      "sha256": "2c4af5463faa223386c50c4dd243b56a1fb4d6446a743872416a307fc682b61a"
     },
     "q.json": {
-      "bytes": 84449,
-      "sha256": "2a7dff6930743ab2854ec089107ec908d820f43bee3996154678e9126d899253"
+      "bytes": 110790,
+      "sha256": "d98bd23609ee2a3661bbfa259aff397514138a228d0eb9f5b13b76d496d96663"
     },
     "r.json": {
-      "bytes": 829987,
-      "sha256": "74f4fca9421db1d613eb7166618e0e889b0fc5360058baeaef8490c048899231"
+      "bytes": 1131243,
+      "sha256": "03636199a86043094791f157a2b16d6f36c4a9cf1128a5450987f943d967795b"
     },
     "s.json": {
-      "bytes": 1972395,
-      "sha256": "03a34016f31eacf245bec25a4a6b3239f839c174016ac11faa7eb9f9027ad1aa"
+      "bytes": 2710472,
+      "sha256": "009b5d9d92eb9d927c2ed5107bd51c71220f709f9d815907514e14a76913a9f7"
     },
     "t.json": {
-      "bytes": 922158,
-      "sha256": "3d6c7332874cba006e8e3ce100d38fbb1fe3a484a04e39d4f7cdd0b904390cb9"
+      "bytes": 1211958,
+      "sha256": "7d3b701c69b570528fea1e677be73db47fc302ac046aab7def5417652489fc92"
     },
     "u.json": {
-      "bytes": 333233,
-      "sha256": "aefb1a90b054d2dd63ef1cc74dc1cbf62c4c82568d4da978e788f7275d4f0388"
+      "bytes": 907721,
+      "sha256": "73bfa344af9427e8abd9797db451afa358ef9faca5399d360e34547287988948"
     },
     "v.json": {
-      "bytes": 305968,
-      "sha256": "91793f7877c40d0750a79ebe5d32e609e29016cb6cf8edd9a75405cdabc7fa22"
+      "bytes": 396062,
+      "sha256": "3b8e2e77c0c058c8711da5921221ada232cf971de8c447cfd0a3dd1262de2e18"
     },
     "w.json": {
-      "bytes": 518095,
-      "sha256": "6f76be461bdd1ebf1743312b23da0a7d898b43ba8d25cedb6c039ffdc2de6369"
+      "bytes": 701273,
+      "sha256": "4d574e44085783776f8bf7787d20856a084ce46abe3a35bbd137c6d107df9395"
     },
     "x.json": {
-      "bytes": 23338,
-      "sha256": "899a0a29425e17c7008911c830b4a359dda09012b8db0093c52235af4c5b3604"
+      "bytes": 35894,
+      "sha256": "9b44141ce2ceb00490a7cc620322f86f95736b2e523bf8af95b0cd8483bf58a0"
     },
     "y.json": {
-      "bytes": 70484,
-      "sha256": "4b3203da65f32ef808641d5cc064b840ccf346cb5029c14dc3529e8b9c93e295"
+      "bytes": 88459,
+      "sha256": "370bdc9ba94f12ef5dffef23494831533e4b2de373c90ec7cb9f864062da7cac"
     },
     "z.json": {
-      "bytes": 42487,
-      "sha256": "eed6dec4e24151cd9488e502c0ed7953f8da16260b05fb7fbf4eee3da541085e"
+      "bytes": 46360,
+      "sha256": "66df91b97c5ac395b605ac5594e00d80ce4416f4d38ee2d290c17bbd140abc16"
     }
   }
 }

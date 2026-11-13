@@ -696,7 +696,7 @@ export default function Quiz({
       <div className="space-y-6">
         <div className="stagger-in quiz-setup rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
           <h2 className="font-word text-2xl tracking-tight">开始抽查</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             选择练习方式与范围；答错后可查看答案并巩固。
           </p>
           {allWords.length === 0 ? (
@@ -705,51 +705,48 @@ export default function Quiz({
             </p>
           ) : null}
 
-          <div className="quiz-setup-layout mt-6 grid gap-6">
-            <div className="space-y-2">
-              <Label>考察方式</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {MODES.map((m) => (
-                  <button
-                    key={m}
-                    data-guide={`mode-${m}`}
-                    onClick={() => {
-                      setMode(m)
-                      setScope('all')
-                      setNotice('')
-                    }}
-                    className={`pressable rounded-lg border px-3 py-2.5 text-left transition-colors duration-150 ${
-                      m === 'progressive' || m === 'synonym' ? 'col-span-2' : ''
-                    } ${
-                      mode === m
-                        ? 'border-primary bg-primary/10 font-medium text-primary'
-                        : 'bg-background hover:bg-accent'
+          <div className="quiz-setup-layout mt-6">
+            <p id="quiz-mode-label" className="quiz-mode-label text-sm font-medium">考查方式</p>
+            <div role="group" aria-labelledby="quiz-mode-label" className="quiz-modes grid auto-rows-fr grid-cols-2 gap-2 sm:gap-3">
+              {MODES.map((m) => (
+                <button
+                  key={m}
+                  data-guide={`mode-${m}`}
+                  aria-pressed={mode === m}
+                  onClick={() => {
+                    setMode(m)
+                    setScope('all')
+                    setNotice('')
+                  }}
+                  className={`pressable min-w-0 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150 ${
+                    mode === m
+                      ? 'border-primary bg-primary/10 font-medium text-primary'
+                      : 'bg-background hover:bg-accent'
+                  }`}
+                >
+                  <span className="block text-sm">{MODE_LABEL[m]}</span>
+                  <span
+                    className={`mt-0.5 block text-xs ${
+                      mode === m ? 'text-primary/70' : 'text-muted-foreground'
                     }`}
                   >
-                    <span className="block text-sm">{MODE_LABEL[m]}</span>
-                    <span
-                      className={`mt-0.5 block text-xs ${
-                        mode === m ? 'text-primary/70' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {MODE_SUB[m]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {synonymMode && synonymGroups.length === 0 ? (
-                <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
-                  还没有近义组。到「录入与管理词汇」整理词群后，即可开始回忆。
-                </p>
-              ) : null}
+                    {MODE_SUB[m]}
+                  </span>
+                </button>
+              ))}
             </div>
+            {synonymMode && synonymGroups.length === 0 ? (
+              <p className="quiz-mode-notice text-xs leading-5 text-amber-800 dark:text-amber-300">
+                还没有近义组。到「录入与管理词汇」整理词群后，即可开始回忆。
+              </p>
+            ) : null}
 
-            <div className="space-y-5 rounded-xl bg-background p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>范围</Label>
+            <div className="quiz-start-panel flex min-w-0 flex-col justify-center gap-4 rounded-xl bg-background p-4 sm:gap-5 sm:p-5">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)] gap-3 sm:gap-4">
+                <div className="grid min-w-0 gap-2.5">
+                  <Label htmlFor="quiz-scope">范围</Label>
                   <Select value={scope} onValueChange={setScope}>
-                    <SelectTrigger>
+                    <SelectTrigger id="quiz-scope" className="w-full min-w-0">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -781,10 +778,10 @@ export default function Quiz({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>题量</Label>
+                <div className="grid min-w-0 gap-2.5">
+                  <Label htmlFor="quiz-count">题量</Label>
                   <Select value={count} onValueChange={setCount}>
-                    <SelectTrigger>
+                    <SelectTrigger id="quiz-count" className="w-full min-w-0">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -815,7 +812,7 @@ export default function Quiz({
               >
                 开始（{availableCount} {synonymMode ? '组' : '词'}在范围内）
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
+              <p className="text-center text-xs leading-5 text-muted-foreground">
                 {synonymMode
                   ? '每组一道题。成员顺序不限，重复只算一次；提交时才检查拼写。'
                   : '优先复习到期的词，再学习新词'}

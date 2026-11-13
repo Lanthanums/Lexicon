@@ -2,9 +2,9 @@
 
 **Give every word a place.** A Windows desktop vocabulary app for collecting words, connecting related meanings and practising recall.
 
-[简体中文](README_zh.md) · [Downloads](https://github.com/Lanthanums/Lexicon/releases) · [Release notes](docs/RELEASE_NOTES.md)
+[简体中文](README_zh.md) · [Downloads](https://github.com/Lanthanums/Lexicon/releases) · [Release guide](docs/RELEASE_NOTES.md)
 
-Current stable version: **v2.0** (`2.0.0`). The interface is in Chinese, with light, dark and system appearance modes. The [v2.0 release](https://github.com/Lanthanums/Lexicon/releases/tag/v2.0) provides the Windows x64 installer, portable archive, source archive and checksums.
+Current stable version: **v3.0** (`3.0.0`). The interface is in Chinese, with light, dark and system appearance modes. The [v3.0 release](https://github.com/Lanthanums/Lexicon/releases/tag/v3.0) provides the Windows x64 installer, portable archive, source archive and checksums.
 
 ## Your word space
 
@@ -19,8 +19,8 @@ Current stable version: **v2.0** (`2.0.0`). The interface is in Chinese, with li
 
 For a packaged Windows build, download the version you want from [Releases](https://github.com/Lanthanums/Lexicon/releases). Use the installer, or fully extract the portable archive and run `Lexicon.exe` inside its application folder. Close older instances first.
 
-1. Open **录入与管理词汇** and enter a word. To add several, separate them with semicolons, for example `effluent;affluent;effulgent`. Chinese semicolons and newlines also work.
-2. Review missing definitions or ambiguous grouping choices together, then save the batch. Cancelling keeps your input and adds nothing.
+1. Open **录入与管理词汇** and enter a word. To add several, separate them with semicolons, for example `effluent;affluent;effulgent`. Chinese semicolons and pasted lines also work. Each query handles up to 100 words and leaves the rest in the input field. Case, fullwidth characters and curly apostrophes are normalised for duplicate detection.
+2. Review missing definitions or ambiguous grouping choices together, then save the batch. If a reviewed grouping candidate changes, the app asks you to choose again. Cancelling keeps your input and adds nothing.
 3. Organise your words, then open **综合抽查** to practise. Export a JSON backup from **设置与备份** when you want a portable copy of your library.
 
 The first-run guide introduces all four areas and offers four short exercises for less obvious interactions. These run in the real management interface with a temporary example library that is discarded on exit. Skip an exercise, press Escape, or replay the guide from Settings at any time.
@@ -29,7 +29,7 @@ The first-run guide introduces all four areas and offers four short exercises fo
 
 Blue cards are spelling groups, green cards are synonym groups, grey cards are custom groups and yellow cards are isolated words. Each word can belong to one group of each type at the same time; it is isolated when it belongs to none. Automatic matching is editable, and lexical relationships still need context when choosing an interchangeable word.
 
-Cards show words, phonetics, one-line collapsible definitions and five mastery dots. The pencil opens a unified editor for names, notes, type, members, order and word details. Expand a member to edit definitions, phonetics, usage and examples. The list view shows each word once with its memberships and sorting controls.
+Cards show words, phonetics, one-line collapsible definitions and five mastery dots. The pencil opens a unified editor for names, notes, type, members, order and word details. Expand a member to edit definitions, phonetics, usage and examples. The list view shows each word once with its memberships and sorting controls. Both views paginate large libraries. Search by spelling, definition or group name and jump to the result. The input and toolbar stay visible over a softly blurred background while you scroll.
 
 | Less obvious interaction | Result |
 | --- | --- |
@@ -38,13 +38,13 @@ Cards show words, phonetics, one-line collapsible definitions and five mastery d
 | Hold the three-line grip in the editor, then drag | Reorder members. Focus the grip and use the up/down keys as an alternative. |
 | Click the five mastery dots in the editor | Open a 0–5 slider. Changes take effect when you save; manual adjustments do not add practice counts. |
 
-Moving a member preserves its other relationship types. An unresolved merge type remains available across restarts until you explicitly choose it. Undo restores prior membership and order.
+Moving a member preserves its other relationship types. An unresolved merge type remains available across restarts until you explicitly choose it. Undo can restore prior membership and order. Recalculating automatic spelling groups runs in the background and preserves manually curated groups.
 
-The editor distinguishes **removing from a group**, **deleting a word everywhere** and **dissolving a group**. Removing or dissolving preserves the words and their learning history; deleting a word removes its relationships and history. Dissolving also removes that group's notes. Confirmations and undo help you review these actions, and closing an editor with unsaved changes asks before discarding them.
+The editor distinguishes **removing from a group**, **deleting a word everywhere** and **dissolving a group**. Removing or dissolving preserves the words and their learning history; deleting a word removes its relationships and history. Named or annotated groups that dissolve are recorded in the exportable relation archive. Confirmations and undo help you review these actions, and closing an editor with unsaved changes asks before discarding them.
 
 ## Practise and review
 
-Review prioritises due words, then new words, with advance practice available afterwards. Intervals respond to elapsed recall and mistakes; an incorrect answer is scheduled to return after about five minutes. Immediate repetitions do not keep inflating the interval.
+The quiz setup offers six modes in three rows, with scope and question count beside them on wide windows. Review prioritises due words, then new words, with advance practice available afterwards. Intervals respond to elapsed recall and mistakes; an incorrect answer is scheduled to return after about five minutes. Immediate repetitions do not keep inflating the interval.
 
 Spelling hints reveal the first letter, phonetics and then the full word. Assisted answers do not increase mastery. Synonym recall accepts answers in any order: groups of up to three require all members, while larger groups require at least 80%, rounded up. Missed members remain available for consolidation even when the group passes. Retry queues carry across additional rounds until completed or reset.
 
@@ -52,23 +52,12 @@ Scheduling uses a transparent heuristic exponential model. It is not trained FSR
 
 ## Local data, dictionaries and backups
 
-Your library is stored locally, with automatic desktop snapshots and JSON export/import. Imports require confirmation and retain a pre-import recovery copy. There is no cloud synchronisation. A blank distribution contains no personal learning records; launching it normally still opens your existing local library if one is present.
+Your library stays on your device. Desktop snapshots and pre-import recovery copies can use disk storage when browser storage runs out. Startup chooses the newest readable saved copy. JSON imports require confirmation, and desktop snapshots support up to 32 MiB. An existing installation can open its library after upgrading.
 
-- Export a backup before upgrading or switching versions. v2 adds custom groups, member order and unresolved merge choices that older versions do not understand. Existing word IDs, definitions and learning history are preserved; archived conflicting synonym relationships remain exportable in `relationArchive`.
+- Export a backup before switching versions. JSON includes word IDs, definitions, learning history, custom groups, member order and unresolved merge choices. Export relation history in Settings or find it in the backup’s `relationArchive` field.
 - Dictionary and synonym credentials are stored locally and may be included in exported backups. Check a backup before sharing it.
-- Offline synonym candidates use the bundled **Open English WordNet 2025** index. Optional API verification uses Datamuse; definition lookups use the configured dictionary services. These requests need a network connection. No on-device model is installed or trained.
+- Offline synonym candidates use the bundled **Open English WordNet 2025** index, including direct links between related adjective senses. Optional API verification uses Datamuse; definition lookups use the configured dictionary services. These requests need a network connection. No on-device model is installed or trained.
 - Public dictionary data is separate from your personal library. Dataset and dependency licences remain in [Third-party notices](docs/THIRD_PARTY_NOTICES.md).
-
-## What's new in v2.0
-
-- Batch lookup, one combined review dialog and compact controls that stay accessible while scrolling.
-- A four-area overview plus four hidden-interaction exercises in an isolated practice library.
-- Guide hints appear after positioning, including after window resizing; dialogs fade without shifting their centres, and popovers retain their anchors.
-- Immediate mastery-slider feedback, simpler page transitions and reduced-motion support for review charts.
-- A shared package version for the sidebar, About, executable and installer.
-- Adaptive review scheduling, clearer backup controls and a staged-copy fallback when Windows reports `EXDEV` while saving a snapshot.
-
-See [Release notes](docs/RELEASE_NOTES.md) for this revision.
 
 ## Build and run
 
@@ -100,13 +89,14 @@ Generated packages are written to `release/`. The source checkout contains no pe
 ```sh
 npm test
 npm run test:e2e
+npm run test:extreme
 ```
 
-The v2.0 release passed **51 unit tests and 38 packaged Electron regression groups** with no page errors. Coverage includes real word/card drags, long-press sorting, mastery editing, temporary-guide isolation, frame-by-frame dialog positioning, backup recovery and light/dark layouts at desktop and narrow widths. Tests use synthetic libraries and isolated profiles.
+Tests use synthetic libraries and isolated profiles. Coverage includes word and card drags, a 103-entry paste, a 10,000-word library, snapshot recovery after browser storage runs out, and light and dark layouts at desktop and narrow widths.
 
-Set `LEXICON_EXE` to test a packaged executable and `LEXICON_ARTIFACT_DIR` to choose a report directory. `npm run test:guide` and `npm run test:motion` run the focused suites. The legacy desktop/unified/synonyms test entry points forward to the current v2 regression.
+Set `LEXICON_EXE` to test a packaged executable and `LEXICON_ARTIFACT_DIR` to choose a report directory. `npm run test:guide` and `npm run test:motion` run the focused suites. The desktop/unified/synonyms compatibility test entry points run the management regression suite.
 
-Full-repository ESLint still reports 15 existing errors and one warning; it is not a passing check. The focused guide and shared-dialog checks pass. The Windows installer is unsigned.
+The Windows installer is unsigned.
 
 ## Repository layout
 

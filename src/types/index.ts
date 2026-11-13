@@ -96,7 +96,7 @@ export interface LearningState {
 
 export interface LibraryState {
   customSets?: Record<string, CustomSet>
-  relationArchive?: SynonymSet[]
+  relationArchive?: ArchivedRelation[]
   synonymSets: Record<string, SynonymSet>
   words: Record<string, Word>
   groups: Record<string, WordGroup>
@@ -116,6 +116,10 @@ export interface SynonymSet {
   notes: string
   wordIds: string[]
   createdAt: number
+}
+
+export interface ArchivedRelation extends SynonymSet {
+  kind?: GroupKind
 }
 
 export type CustomSet = SynonymSet

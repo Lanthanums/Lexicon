@@ -30,8 +30,12 @@ export function synonymName(name:string,words:Word[],nameSource?:'auto'|'manual'
   const automatic=nameSource==='auto' || /[·•]\s*近义词(?:群|组)?\s*$/.test(name)
   const bare=unprefix(name).replace(/\s*[·•]\s*近义词(?:群|组)?\s*$/, '').trim()
   const label=automatic?coreGloss(bare):bare
-  const fallback=words.map(word=>coreGloss(word.gloss)).find(Boolean) || '未命名'
-  return '近义组 · '+(label || fallback)
+  if (label) return '近义组 · ' + label
+  for (const word of words) {
+    const fallback = coreGloss(word.gloss)
+    if (fallback) return '近义组 · ' + fallback
+  }
+  return '近义组 · 未命名'
 }
 
 export function groupTitle(state:LibraryState,ref:GroupRef):string {

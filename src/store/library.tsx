@@ -1,5 +1,5 @@
 import {scheduleAnswer,rateMastery} from '@/lib/memorySchedule'
-import { reconcileRelations, undoPatch, restoreDeletedWord } from '@/lib/relations'
+import { archiveDissolvedRelations, reconcileRelations, undoPatch, restoreDeletedWord } from '@/lib/relations'
 import {
   createContext,
   useCallback,
@@ -19,37 +19,10 @@ import type {
   Word,
   WordGroup,
 } from '@/types'
-import { clusterWords, wordSimilarity } from '@/lib/similarity'
+import { wordSimilarity } from '@/lib/similarity'
 import type { ThresholdSuggestion } from '@/lib/learn'
 import { normalizeState } from '@/lib/state'
-
-const STORAGE_KEY = 'lexicon-state-v1'
-
-export const DEFAULT_PROVIDERS: DictProviderConfig[] = [
-  { id: 'youdao-web', label: '网易有道（免费 · 快速）', enabled: true },
-  {
-    id: 'wiktionary',
-    label: '维基词典 + MyMemory（免费 · 较慢 · 默认关闭）',
-    enabled: false,
-  },
-]
-
-const DEFAULT_SETTINGS: Settings = {
-  synonymMode: 'offline',
-  threshold: 0.7,
-  dictProviders: DEFAULT_PROVIDERS,
-}
-
-const EMPTY: LibraryState = {
-  customSets: {},
-  synonymSets: {},
-  words: {},
-  groups: {},
-  stats: {},
-  settings: DEFAULT_SETTINGS,
-  learning: { enabled: true, addCount: 0, traces: [] },
-  activity: {},
-}
+import { BEFORE_IMPORT_KEY, EMPTY, MAX_SNAPSHOT_BYTES, STORAGE_KEY } from '@/lib/libraryDefaults'
 
 /** local-date key YYYY-MM-DD (not UTC — the user's day rolls at midnight) */
 export function dayKey(d = new Date()): string {
@@ -96,6 +69,7 @@ export interface GroupCandidate {
 
 interface LibraryApi {
   state: LibraryState
+  getCurrentState: () => LibraryState
   applyManagement: (update: (draft: LibraryState) => void) => void
   managementTransaction: (update: (draft: LibraryState) => void) => () => void
   deleteManaged: (kind: 'word' | 'shape' | 'synonym' | 'custom', id: string) => () => void
@@ -124,7 +98,7 @@ interface LibraryApi {
   removeDictProvider: (id: string) => void
   /** move a provider to the front of the chain, making it the primary */
   setPrimaryProvider: (id: string) => void
-  recluster: () => void
+  recluster: (baseline: LibraryState, clusters: string[][]) => void
   setLearningEnabled: (on: boolean) => void
   applyTrace: (id: string) => void
   ackTrace: (id: string) => void
@@ -134,7 +108,7 @@ interface LibraryApi {
   resetWordStats: (id: string) => void
   resetGroupStats: (groupId: string) => void
   seedExamples: () => number
-  importState: (json: string) => boolean
+  importState: (json: string) => Promise<boolean>
   clearAll: () => void
 }
 
@@ -178,9 +152,15 @@ const SEED: Array<NewWordInput & { seedGroup: string }> = [
 
 /* ---------- provider ---------- */
 
-export function LibraryProvider({ children, initialState, persist = true }: { children: ReactNode; initialState?: LibraryState; persist?: boolean }) {
+export function LibraryProvider({ children, initialState, snapshotAt = 0, preserveUnreadable = false, persist = true }: {
+  children: ReactNode; initialState?: LibraryState; snapshotAt?: number; preserveUnreadable?: boolean; persist?: boolean
+}) {
   const [state, setReactState] = useState<LibraryState>(() => initialState ? structuredClone(initialState) : load())
   const stateRef = useRef(state)
+  const getCurrentState = useCallback(() => stateRef.current, [])
+  const importing = useRef(false)
+  const latestSnapshotAt = useRef(snapshotAt)
+  const lastFlush = useRef<LibraryState | null>(preserveUnreadable ? state : null)
   // Transactions run once, synchronously, so callers get the actual add result.
   const setState = useCallback((update: LibraryState | ((prev: LibraryState) => LibraryState)) => {
     const next = typeof update === 'function' ? update(stateRef.current) : update
@@ -189,15 +169,32 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
   }, [])
 
   useEffect(() => {
+    if (preserveUnreadable) toast.error('未能读取词库，请在设置中检查备份。', { id: 'load-error', duration: 15000 })
+  }, [preserveUnreadable])
+
+  useEffect(() => {
     if (!persist) return
     const flush = () => {
+      const snapshot = stateRef.current
+      if (lastFlush.current === snapshot) return
+      lastFlush.current = snapshot
+      latestSnapshotAt.current = Math.max(Date.now(), latestSnapshotAt.current + 1)
+      const raw = JSON.stringify({ ...snapshot, snapshotAt: latestSnapshotAt.current })
+      let mirrored = false
       try {
-        const raw = JSON.stringify(stateRef.current)
         localStorage.setItem(STORAGE_KEY, raw)
-        window.lexicon?.saveSnapshot(raw).catch(() => toast.error('自动备份失败，请手动导出词库', { id: 'backup-error' }))
-      } catch {
-        toast.error('词库未能保存，请立即导出备份', { id: 'storage-error' })
+        mirrored = true
+      } catch { /* the desktop snapshot can hold larger libraries */ }
+      const warn = () => toast.error('词库未能保存，请立即导出备份', { id: 'storage-error' })
+      if (!window.lexicon) {
+        if (!mirrored) warn()
+        return
       }
+      void window.lexicon.saveSnapshot(raw).catch(() => {
+        if (lastFlush.current === snapshot) lastFlush.current = null
+        if (mirrored) toast.error('自动备份失败，请手动导出词库', { id: 'backup-error' })
+        else warn()
+      })
     }
     const timer = window.setTimeout(flush, 180)
     window.addEventListener('pagehide', flush)
@@ -210,10 +207,12 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
   }, [state, persist])
 
   const managementTransaction = useCallback((update: (draft: LibraryState) => void, recoverWordId?: string): (() => void) => {
-    const before = structuredClone(stateRef.current)
+    const before = stateRef.current
     const draft = structuredClone(before)
     update(draft)
-    const after = normalizeState(reconcileRelations(draft), EMPTY)
+    const reconciled = reconcileRelations(draft)
+    archiveDissolvedRelations(before, reconciled)
+    const after = normalizeState(reconciled, EMPTY, false)
     setState(after)
     let used = false
     return () => {
@@ -726,31 +725,25 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
     }))
   }, [setState])
 
-  const recluster = useCallback(() => {
-    setState((prev) => {
-      const wordList = Object.values(prev.words)
-      if (wordList.length === 0) return prev
-      const locked = Object.values(prev.groups)
-        .filter((g) => g.manual && g.wordIds.length > 1)
-        .map((g) => g.wordIds)
-      const manualMember = new Set(locked.flat())
-      const clusters = clusterWords(
-        wordList.map((w) => ({ id: w.id, text: w.text, phonetic: w.phonetic })),
-        prev.settings.threshold,
-        locked,
-      )
+  const recluster = useCallback((baseline: LibraryState, clusters: string[][]) => {
+    setState(prev => {
+      if (prev.words !== baseline.words || prev.groups !== baseline.groups ||
+          prev.settings.threshold !== baseline.settings.threshold) {
+        throw new Error('计算期间词库或阈值发生变化，请重新分组')
+      }
       const groups: Record<string, WordGroup> = {}
       const words = { ...prev.words }
       for (const cluster of clusters) {
-        const gid = uid()
-        groups[gid] = {
-          id: gid,
-          wordIds: cluster,
-          manual: cluster.some((id) => manualMember.has(id)),
-          createdAt: Date.now(),
-        }
+        const existing = prev.groups[words[cluster[0]].groupId]
+        const preserved = (
+          existing.wordIds.length === cluster.length &&
+          cluster.every(id => words[id].groupId === existing.id)
+        )
+        const group = preserved ? existing : { id: crypto.randomUUID(), manual: false, createdAt: Date.now() }
+        const gid = group.id
+        groups[gid] = { ...group, wordIds: cluster, kind: cluster.length > 1 ? 'confusable' : 'single' }
         for (const id of cluster) {
-          words[id] = { ...words[id], groupId: gid }
+          if (words[id].groupId !== gid) words[id] = { ...words[id], groupId: gid }
         }
       }
       return { ...prev, words, groups }
@@ -826,19 +819,39 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
     return added
   }, [setState])
 
-  const importState = useCallback((json: string): boolean => {
+  const importState = useCallback(async (json: string): Promise<boolean> => {
+    if (importing.current) return false
+    importing.current = true
     try {
       const parsed = normalizeState(JSON.parse(json), EMPTY)
-      // Keep the previous library available even when a valid import replaces it.
-      const previous = JSON.stringify(stateRef.current)
+      if (window.lexicon && new Blob([JSON.stringify(parsed)]).size > MAX_SNAPSHOT_BYTES - 64) {
+        toast.error('词库超过桌面快照的 32 MiB 容量')
+        return false
+      }
+      const before = stateRef.current
       if (persist) {
-        localStorage.setItem('lexicon-before-import', previous)
-        window.lexicon?.saveBeforeImport(previous).catch(() => toast.error('导入前的磁盘备份失败，本地恢复副本仍保留'))
+        const previous = JSON.stringify(before)
+        let savedToDisk = false
+        if (window.lexicon) {
+          try { await window.lexicon.saveBeforeImport(previous); savedToDisk = true }
+          catch { /* the browser mirror is a fallback for smaller libraries */ }
+        }
+        if (stateRef.current !== before) {
+          toast.error('备份期间词库发生变化，请重新导入')
+          return false
+        }
+        try { localStorage.setItem(BEFORE_IMPORT_KEY, previous) }
+        catch {
+          if (!savedToDisk) return false
+          localStorage.removeItem(BEFORE_IMPORT_KEY)
+        }
       }
       setState(parsed)
       return true
     } catch {
       return false
+    } finally {
+      importing.current = false
     }
   }, [setState, persist])
 
@@ -884,7 +897,7 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
   const api = useMemo<LibraryApi>(
     () => ({
       state,
-      applyManagement, managementTransaction, deleteManaged, setMastery,
+      getCurrentState, applyManagement, managementTransaction, deleteManaged, setMastery,
       addStudyWord,
       createSynonymSet,
       updateSynonymSet,
@@ -920,7 +933,7 @@ export function LibraryProvider({ children, initialState, persist = true }: { ch
     }),
     [
       state,
-      applyManagement, managementTransaction, deleteManaged, setMastery,
+      getCurrentState, applyManagement, managementTransaction, deleteManaged, setMastery,
       addStudyWord,
       createSynonymSet,
       updateSynonymSet,

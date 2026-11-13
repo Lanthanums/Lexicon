@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import type {LibraryState} from '../src/types/index'
-import {mergeGroups,saveGroup,setGroupKind} from '../src/lib/grouping'
+import {mergeGroups,saveGroup} from '../src/lib/grouping'
 import {reconcileRelations,undoPatch} from '../src/lib/relations'
 import {normalizeState} from '../src/lib/state'
 import {deriveManagementView} from '../src/lib/managementView'
@@ -43,12 +43,27 @@ test('cross-type cards consume their selected relations but preserve unrelated m
  assert.deepEqual(s.stats.a,{correct:8,wrong:1,level:3})
 })
 
-test('dragging a member moves only that member, not its source card; explicit type choice persists and clears pending',()=>{
- const s=grouped(),shape=Object.values(s.groups).find(g=>g.wordIds.length>1)!,near=Object.values(s.synonymSets)[0]
- const result=mergeGroups(s,{ref:{kind:'shape',id:shape.id},wordId:'a'},{kind:'synonym',id:near.id})
- assert.deepEqual(s.groups[shape.id].wordIds,['b','c']);assert.deepEqual(new Set(s.customSets![result.groupRef.id].wordIds),new Set(['a','d','e']))
- const chosen=setGroupKind(s,result.groupRef,'synonym');assert.equal(chosen.kind,'synonym');assert.equal(s.synonymSets[chosen.id].pendingTypeChoice,false);assert.ok(!s.customSets![chosen.id])
- const view=deriveManagementView(s);assert.equal(view.relations.a.synonymId,chosen.id);assert.equal(view.relations.b.shapeId,shape.id)
+test('dragging one word between shape and synonym cards preserves the source relationship and appends to the target',()=>{
+ const before=grouped(),s=structuredClone(before)
+ const shape=Object.values(s.groups).find(g=>g.wordIds.length>1)!,near=Object.values(s.synonymSets)[0]
+ const shapeRef={kind:'shape' as const,id:shape.id},nearRef={kind:'synonym' as const,id:near.id}
+
+ const joinedNear=mergeGroups(s,{ref:shapeRef,wordId:'a'},nearRef)
+ assert.deepEqual(joinedNear,{groupRef:nearRef,needsTypeChoice:false})
+ assert.deepEqual(s.groups[shape.id].wordIds,['a','b','c'])
+ assert.deepEqual(s.synonymSets[near.id].wordIds,['d','e','a'])
+ assert.deepEqual(undoPatch(before,s,s).synonymSets,before.synonymSets)
+
+ const joinedShape=mergeGroups(s,{ref:nearRef,wordId:'d'},shapeRef)
+ assert.deepEqual(joinedShape,{groupRef:shapeRef,needsTypeChoice:false})
+ assert.deepEqual(s.groups[shape.id].wordIds,['a','b','c','d'])
+ assert.deepEqual(s.synonymSets[near.id].wordIds,['d','e','a'])
+ assert.equal(Object.keys(s.customSets!).length,0)
+ const view=deriveManagementView(normalizeState(s,before))
+ for (const id of ['a','d']){
+  assert.equal(view.relations[id].shapeId,shape.id)
+  assert.equal(view.relations[id].synonymId,near.id)
+ }
 })
 
 test('same word can hold one of all three relationships; reassigning preserves the others and manual order',()=>{

@@ -2,6 +2,8 @@ const { _electron } = require('playwright')
 const path = require('node:path'), fs = require('node:fs/promises'), assert = require('node:assert/strict')
 const root = path.resolve(__dirname, '..')
 const out = process.env.LEXICON_ARTIFACT_DIR || path.join(root, 'verification')
+const version = require('../package.json').version
+const versionLabel = 'v' + version.replace(/^(\d+\.\d+)\.0(?=$|-)/, '$1').replace(/-beta\.(\d+)$/, ' beta$1')
 const report = { checks: [], errors: [], screenshots: [] }
 const profile = path.join(out, 'release-profile-' + Date.now())
 let app, page
@@ -14,9 +16,9 @@ async function launch() {
 async function about() {
   await page.getByRole('navigation').getByRole('button', { name: '设置与备份', exact: true }).click()
   const label = page.locator('.settings-help [data-app-version]')
-  assert.equal(await label.textContent(), 'Lexicon v2.0')
-  assert.equal(await label.getAttribute('data-app-version'), '2.0.0')
-  assert.equal(await app.evaluate(({ app }) => app.getVersion()), '2.0.0')
+  assert.equal(await label.textContent(), 'Lexicon ' + versionLabel)
+  assert.equal(await label.getAttribute('data-app-version'), version)
+  assert.equal(await app.evaluate(({ app }) => app.getVersion()), version)
   return label
 }
 ;(async () => {
@@ -27,13 +29,13 @@ async function about() {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 })
     const label = await about()
-    if (width === 1440) assert.equal(await page.locator('aside [data-app-version]').textContent(), 'v2.0')
+    if (width === 1440) assert.equal(await page.locator('aside [data-app-version]').textContent(), versionLabel)
     await label.scrollIntoViewIfNeeded()
     const filename = 'release-about-' + width + '.png'
     await page.locator('.settings-help').screenshot({ path: path.join(out, filename), animations: 'disabled' })
     report.screenshots.push(filename)
   }
-  report.checks.push('Packaged application reports 2.0.0; About and sidebar show v2.0 at desktop/narrow sizes, with no beta or local-version placeholder')
+  report.checks.push(`Electron, About and sidebar agree on ${versionLabel} at desktop and narrow widths`)
   await app.close(); app = null
   await launch()
   await about()

@@ -48,6 +48,7 @@ export type ManagementEditorTarget = GroupRef | { kind: GroupKind; id?: undefine
 export interface ManagementEditorProps {
   target: ManagementEditorTarget
   onClose: () => void
+  onCloseAutoFocus?: (event: Event) => void
   focusWordId?: string
 }
 
@@ -242,7 +243,7 @@ function WordRowMenu({
  * there is no nested word dialog. Destructive membership actions confirm and
  * return an undo snackbar. Top-level Save commits everything in one transaction.
  */
-export default function ManagementEditor({ target, onClose, focusWordId }: ManagementEditorProps) {
+export default function ManagementEditor({ target, onClose, onCloseAutoFocus, focusWordId }: ManagementEditorProps) {
   const guided = useContext(GuidedTourContext)
   const { state, managementTransaction, deleteManaged } = useLibrary()
 
@@ -671,7 +672,7 @@ export default function ManagementEditor({ target, onClose, focusWordId }: Manag
   return (
     <>
       <Dialog open onOpenChange={open => { if (!open) requestClose() }}>
-        <DialogContent onInteractOutside={event=>{if((event.target as HTMLElement)?.closest?.('[data-sonner-toast]'))event.preventDefault()}} className="management-editor-dialog flex max-h-[92vh] w-full max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent onCloseAutoFocus={onCloseAutoFocus} onInteractOutside={event=>{if((event.target as HTMLElement)?.closest?.('[data-sonner-toast]'))event.preventDefault()}} className="management-editor-dialog flex max-h-[92vh] w-full max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="border-b px-5 pb-4 pr-12 pt-5 sm:pl-6 sm:pr-12">
             <DialogTitle className="min-w-0 break-words font-word text-2xl font-medium">{headerTitle}</DialogTitle>
             <DialogDescription className="leading-6">

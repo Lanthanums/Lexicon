@@ -22,6 +22,7 @@ export default function Home() {
   const { state } = useLibrary()
   const [tab, setTab] = useState<TabId>('today')
   const [visited, setVisited] = useState<Set<TabId>>(new Set(['today']))
+  const [locateRequest, setLocateRequest] = useState<{ id: string } | null>(null)
   const [autoStartKey, setAutoStartKey] = useState(0)
   const [tourOpen, setTourOpen] = useState(() => !tourDone())
   const [guideTask, setGuideTask] = useState<GuideTask>('overview')
@@ -29,7 +30,7 @@ export default function Home() {
   const active = TABS.find(t => t.id === tab)!
   function navigate(id: TabId) { setVisited(prev => new Set([...prev, id])); setTab(id); if(id!==tab)window.scrollTo({top:0,behavior:'instant'}) }
   function startQuiz() { setAutoStartKey(Date.now()); navigate('quiz') }
-  function locate() { navigate('manage') }
+  function locate(id: string) { setLocateRequest({ id }); navigate('manage') }
   return (
     <GuidedTourContext.Provider value={tourOpen}><div className="min-h-svh lg:pl-60">
       <aside className="border-b bg-card/80 px-4 py-5 lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex lg:w-60 lg:flex-col lg:border-b-0 lg:border-r lg:px-5 lg:py-9">
@@ -50,9 +51,9 @@ export default function Home() {
         <header className="mb-8 flex items-center justify-between gap-3 border-b pb-6"><div><p className="mb-2 text-[10px] tracking-[0.2em] text-primary">LEXICON / {String(TABS.indexOf(active) + 1).padStart(2, '0')}</p><h2 className="text-2xl font-medium tracking-tight">{active.label}</h2><p className="mt-2 text-sm text-muted-foreground">{active.sub}</p></div><span className="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground sm:flex"><span className="size-1.5 rounded-full bg-emerald-600" />{window.lexicon ? '桌面版' : '本地词库'}</span></header>
         <Suspense fallback={<div role="status" className="rounded-2xl border p-10 text-sm text-muted-foreground">正在打开学习空间…</div>}>
           {visited.has('today') && <section data-page hidden={tab !== 'today'} aria-label="今日学习内容">
-            <Welcome onStartQuiz={startQuiz} onLocateGroup={locate} />
+            <Welcome active={tab === 'today'} onStartQuiz={startQuiz} onLocateGroup={locate} />
           </section>}
-          {visited.has('manage') && <section data-page hidden={tab !== 'manage'}>{tourOpen ? <LibraryProvider initialState={guideLibrary} persist={false}><div className="guide-practice"><p className="mb-4 rounded-xl border bg-primary/5 px-4 py-3 text-xs text-primary">教学练习 · 使用临时示例，退出后回到你的词库</p><Management guideTask={guideTask} /></div></LibraryProvider> : <Management />}</section>}
+          {visited.has('manage') && <section data-page hidden={tab !== 'manage'}>{tourOpen ? <LibraryProvider initialState={guideLibrary} persist={false}><div className="guide-practice"><p className="mb-4 rounded-xl border bg-primary/5 px-4 py-3 text-xs text-primary">教学练习 · 使用临时示例，退出后回到你的词库</p><Management guideTask={guideTask} /></div></LibraryProvider> : <Management active={tab === 'manage'} locateRequest={locateRequest} />}</section>}
           {visited.has('quiz') && <section data-page hidden={tab !== 'quiz'}><Quiz autoStartKey={autoStartKey} /></section>}
           {tab === 'settings' && <div data-page><Settings onReplayTour={() => { setGuideTask('overview'); setTourOpen(true) }} /></div>}
         </Suspense>

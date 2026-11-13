@@ -145,8 +145,22 @@
   .flashcard-layout { display: grid; gap: 1.25rem; align-items: stretch; }
   .study-sidebar { @apply min-w-0 rounded-2xl border bg-card p-6; }
   .study-stat { @apply rounded-xl bg-background px-4 py-3; }
+  .quiz-setup-layout {
+    display: grid;
+    grid-template-areas: "label" "modes" "notice" "start";
+    gap: 0.875rem 1.5rem;
+  }
+  .quiz-mode-label { grid-area: label; }
+  .quiz-modes { grid-area: modes; }
+  .quiz-mode-notice { grid-area: notice; }
+  .quiz-start-panel { grid-area: start; }
+  .quiz-setup-layout:not(:has(.quiz-mode-notice)) { grid-template-areas: "label" "modes" "start"; }
   @media (min-width: 1200px) {
-    .quiz-setup-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .quiz-setup-layout {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas: "label ." "modes start" "notice .";
+    }
+    .quiz-setup-layout:not(:has(.quiz-mode-notice)) { grid-template-areas: "label ." "modes start"; }
   }
   @media (min-width: 1600px) {
     .quiz-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -359,15 +373,47 @@ li[data-sonner-toast][data-styled='true'] [data-description] {
 [data-sonner-toast][data-visible='true'][data-removed='false'] { pointer-events: auto; }
 
 
-/* beta2: compact pinned controls, quiet page motion and related backup actions. */
-.management-anchor { height:1px; margin:0 !important; }
-.management-sticky { position:sticky; top:10px; z-index:30; display:grid; gap:12px; border-radius:16px; background:hsl(var(--background) / .97); padding-bottom:8px; backdrop-filter:blur(12px); transition:box-shadow 220ms ease; }
-.management-sticky[data-stuck=true] { box-shadow:0 10px 24px -18px hsl(var(--foreground) / .35); }
-.management-sticky .entry-panel,.management-toolbar { transition:padding 220ms var(--ease-out-strong); }
-.management-sticky[data-stuck=true] .entry-panel { padding:12px 16px; }
-.management-sticky[data-stuck=true] .entry-panel > p:not([role=status]) { display:none; }
-.management-sticky[data-stuck=true] .management-toolbar { padding:12px 16px; }
-.management-sticky[data-stuck=true] .management-heading-copy { display:none; }
+.management-masonry {
+  --masonry-columns: 1;
+  --masonry-gap: 1rem;
+  display: grid;
+  position: relative;
+  gap: var(--masonry-gap);
+  grid-template-columns: repeat(var(--masonry-columns), minmax(0, 1fr));
+  align-items: start;
+}
+@media (min-width:768px) { .management-masonry { --masonry-columns: 2; } }
+@media (min-width:1280px) { .management-masonry { --masonry-columns: 3; } }
+.management-masonry[data-packed] > .management-card {
+  --masonry-step: calc((100% + var(--masonry-gap)) / var(--masonry-columns));
+  position: absolute;
+  inset-inline-start: calc(var(--masonry-step) * var(--masonry-column));
+  inset-block-start: var(--masonry-top);
+  width: calc(var(--masonry-step) - var(--masonry-gap));
+}
+
+.management-sticky {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  gap: 12px;
+  padding-block: 10px 8px;
+}
+.management-sticky::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -10px -12px -26px;
+  pointer-events: none;
+  background: hsl(var(--background) / .78);
+  backdrop-filter: blur(14px);
+  mask-image: linear-gradient(#000 calc(100% - 38px), transparent),
+    linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+  mask-composite: intersect;
+}
 .backup-top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; column-gap:48px; row-gap:20px; }
 .backup-primary-actions > button { min-width:120px; }
 .backup-maintenance { display:flex; align-items:center; flex-wrap:wrap; gap:16px 24px; }
@@ -381,10 +427,7 @@ li[data-sonner-toast][data-styled='true'] [data-description] {
 @keyframes page-arrive { from {opacity:.55} to {opacity:1} }
 @keyframes entry-progress-in { from {opacity:0} to {opacity:1} }
 @media (max-width:640px) {
-  .management-sticky { top:6px; gap:8px; }
-  .management-sticky[data-stuck=true] .management-toolbar { padding:10px; }
-  .management-sticky[data-stuck=true] .management-toolbar label { font-size:11px; gap:5px; }
-  .management-sticky[data-stuck=true] .management-toolbar > div:last-child { gap:8px; margin-top:8px; padding-top:8px; }
+  .management-sticky { gap:8px; padding-top:6px; }
   .backup-top { align-items:flex-start; }
   .backup-folder { padding-left:0; }
   .backup-maintenance { gap:14px; }

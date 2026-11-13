@@ -26,6 +26,10 @@ export interface ManagementView {
   cards: ManagementCard[]
 }
 
+function latestAddedAt(words: Word[]): number {
+  return words.reduce((latest, word) => Math.max(latest, word.addedAt), -Infinity)
+}
+
 export function deriveManagementView(state: LibraryState): ManagementView {
   const relations: Record<string, WordRelations> = Object.fromEntries(
     Object.keys(state.words).map(id => [id, { isolated: true }]),
@@ -35,19 +39,19 @@ export function deriveManagementView(state: LibraryState): ManagementView {
     const words = group.wordIds.map(id => state.words[id]).filter((word): word is Word => !!word)
     if (words.length < 2) continue
     words.forEach(word => { relations[word.id] = { ...relations[word.id], shapeId: group.id, isolated: false } })
-    cards.push({ id: group.id, kind: 'shape', name: groupTitle(state,{kind:'shape',id:group.id}), words, latestAddedAt: Math.max(...words.map(w => w.addedAt)) })
+    cards.push({ id: group.id, kind: 'shape', name: groupTitle(state,{kind:'shape',id:group.id}), words, latestAddedAt: latestAddedAt(words) })
   }
   for (const group of Object.values(state.synonymSets)) {
     const words = group.wordIds.map(id => state.words[id]).filter((word): word is Word => !!word)
     if (words.length < 2) continue
     words.forEach(word => { relations[word.id] = { ...relations[word.id], synonymId: group.id, isolated: false } })
-    cards.push({ id: group.id, kind: 'synonym', name: groupTitle(state,{kind:'synonym',id:group.id}), notes: userNotes(group.notes), words, latestAddedAt: Math.max(...words.map(w => w.addedAt)) })
+    cards.push({ id: group.id, kind: 'synonym', name: groupTitle(state,{kind:'synonym',id:group.id}), notes: userNotes(group.notes), words, latestAddedAt: latestAddedAt(words) })
   }
   for (const group of Object.values(state.customSets ?? {})) {
     const words = group.wordIds.map(id => state.words[id]).filter((word): word is Word => !!word)
     if (words.length < 2) continue
     words.forEach(word => { relations[word.id] = {...relations[word.id], customId:group.id, isolated:false} })
-    cards.push({id:group.id,kind:'custom',name:groupTitle(state,{kind:'custom',id:group.id}),notes:userNotes(group.notes),words,latestAddedAt:Math.max(...words.map(w=>w.addedAt))})
+    cards.push({id:group.id,kind:'custom',name:groupTitle(state,{kind:'custom',id:group.id}),notes:userNotes(group.notes),words,latestAddedAt:latestAddedAt(words)})
   }
   for (const word of Object.values(state.words)) {
     if (!relations[word.id]?.isolated) continue
@@ -78,15 +82,15 @@ export function managementWords(cards: ManagementCard[], sort: ManagementSort): 
   })
 }
 
-export function searchManagement(state: LibraryState, query: string): Word[] {
+export function searchManagement(state: LibraryState, query: string, view?: ManagementView): Word[] {
   const q = query.trim().toLocaleLowerCase()
   if (!q) return []
-  const groupNames = (id: string) => [
-    ...Object.values(state.groups).filter(g=>g.wordIds.length>1 && g.wordIds.includes(id)).map(g=>groupTitle(state,{kind:'shape',id:g.id})),
-    ...Object.values(state.synonymSets).filter(g=>g.wordIds.includes(id)).map(g=>groupTitle(state,{kind:'synonym',id:g.id})),
-    ...Object.values(state.customSets??{}).filter(g=>g.wordIds.includes(id)).map(g=>groupTitle(state,{kind:'custom',id:g.id})),
-  ].join(' ')
+  const namesByWord = new Map<string, string>()
+  for (const card of (view ?? deriveManagementView(state)).cards) {
+    if (card.kind === 'isolated') continue
+    for (const word of card.words) namesByWord.set(word.id, (namesByWord.get(word.id) ?? '') + ' ' + card.name)
+  }
   return Object.values(state.words).filter(word =>
-    `${word.text} ${word.gloss} ${word.meanings.map(m => `${m.en} ${m.zh ?? ''}`).join(' ')} ${groupNames(word.id)}`.toLocaleLowerCase().includes(q),
+    `${word.text} ${word.gloss} ${word.meanings.map(m => `${m.en} ${m.zh ?? ''}`).join(' ')} ${namesByWord.get(word.id) ?? ''}`.toLocaleLowerCase().includes(q),
   ).sort((a, b) => a.text.localeCompare(b.text))
 }

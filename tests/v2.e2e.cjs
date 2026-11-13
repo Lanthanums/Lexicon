@@ -52,6 +52,21 @@ async function dragWord(word,target){await safeDrag(page.locator(`[data-drag-wor
  await dragCard('orange','pupil');s=await state();let provisional=Object.values(s.customSets).find(g=>g.wordIds.includes('orange'));assert.ok(provisional.pendingTypeChoice);assert.equal(await card(provisional.id).getByRole('group',{name:'归为什么类型？',exact:true}).count(),1);await card(provisional.id).getByRole('button',{name:/^编辑/}).click();await page.locator('[data-slot=dialog-content]').getByRole('button',{name:'保存修改',exact:true}).click();assert.equal((await state()).customSets[provisional.id].pendingTypeChoice,true);await page.reload();await nav('录入与管理词汇');provisional=Object.values((await state()).customSets)[0];assert.ok(provisional.pendingTypeChoice);await card(provisional.id).getByRole('group').getByRole('button',{name:'自定义组',exact:true}).click();assert.equal((await state()).customSets[provisional.id].pendingTypeChoice,false)
  report.checks.push('Isolated into typed inherits type; two isolated default to grey custom; inline choice survives reload until explicit confirmation')
 
+ await reset();await dragWord('adapt','stories');s=await state()
+ assert.deepEqual(s.groups['shape-a'].wordIds,fixture.groups['shape-a'].wordIds)
+ assert.deepEqual(s.synonymSets.stories.wordIds,[...fixture.synonymSets.stories.wordIds,'adapt'])
+ assert.equal(await page.locator('[data-management-word=adapt]').count(),2)
+ assert.equal(Object.keys(s.customSets).length,0)
+ await page.getByRole('button',{name:'列表视图',exact:true}).click()
+ assert.equal(await page.locator('[data-management-word=adapt]').count(),1)
+ await page.getByRole('button',{name:'搜索词库',exact:true}).click()
+ await page.getByRole('textbox',{name:'搜索关键词'}).fill('寓言')
+ const dual=page.getByRole('dialog').getByRole('button',{name:/adapt/})
+ assert.match(await dual.textContent(),/形近组.*近义组 · 寓言/)
+ await dual.click()
+ await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='录入英文单词')
+ report.checks.push('Dragging a word between relation types keeps both cards, with a single list row and both groups visible in search')
+
  await reset();await dragCard('shape-a','stories');s=await state();provisional=Object.values(s.customSets)[0];assert.equal(provisional.wordIds.length,6);assert.ok(provisional.pendingTypeChoice);assert.ok(!s.synonymSets.stories);assert.ok(!s.groups['shape-a']);assert.equal(Object.keys(s.words).length,15);assert.deepEqual(s.stats,fixture.stats);await shot('03-v2-pending-merge');await card(provisional.id).getByRole('group').getByRole('button',{name:'近义组',exact:true}).click();s=await state();assert.equal(s.synonymSets[provisional.id].wordIds.length,6);assert.equal(s.synonymSets[provisional.id].pendingTypeChoice,false);assert.ok(!s.customSets[provisional.id]);report.checks.push('Cross-type card merge defaults to persistent custom, then converts to chosen type with all words and learning history intact')
 
  await reset();await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await row('fable').getByRole('button',{name:/长按拖动/}).press('ArrowDown');assert.equal(await dialog.locator('[data-editor-row-id]').first().getAttribute('data-editor-row-id'),'parable')

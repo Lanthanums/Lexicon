@@ -1,4 +1,5 @@
-import type { LibraryState, SynonymSet } from '../types/index'
+import { normalizeEntryText } from './batchEntry'
+import type { ArchivedRelation, LibraryState } from '../types/index'
 
 /** Keep the legacy storage format; singleton shape buckets are storage only. */
 export function reconcileRelations(input: LibraryState, migrate = false): LibraryState {
@@ -29,7 +30,7 @@ export function reconcileRelations(input: LibraryState, migrate = false): Librar
     word.groupId = gid
   }
   const assigned = new Set<string>()
-  const archive: SynonymSet[] = [...(state.relationArchive ?? [])]
+  const archive: ArchivedRelation[] = [...(state.relationArchive ?? [])]
   // The newest legacy relation wins; retain full conflicting notes/membership in the archive.
   const groups = Object.values(state.synonymSets).sort((a,b) => b.createdAt-a.createdAt || a.id.localeCompare(b.id))
   state.synonymSets = {}
@@ -61,8 +62,41 @@ export function reconcileRelations(input: LibraryState, migrate = false): Librar
   return state
 }
 
+/** Keep group metadata when editing or deleting a member dissolves a relation. */
+export function archiveDissolvedRelations(before: LibraryState, after: LibraryState): void {
+  const tables = [
+    ['shape', before.groups, after.groups],
+    ['synonym', before.synonymSets, after.synonymSets],
+    ['custom', before.customSets ?? {}, after.customSets ?? {}],
+  ] as const
+  const archive = after.relationArchive ?? []
+  const known = new Set(archive.map(group => JSON.stringify(group)))
+  for (const [kind, prior, next] of tables) {
+    for (const group of Object.values(prior)) {
+      if (group.wordIds.length < 2 || (next[group.id]?.wordIds.length ?? 0) > 1) continue
+      if (!group.name && !group.notes && !group.provenance) continue
+      const item: ArchivedRelation = {
+        kind, id: group.id, name: group.name ?? '', notes: group.notes ?? '',
+        wordIds: [...group.wordIds], createdAt: group.createdAt, provenance: group.provenance,
+      }
+      if (known.has(JSON.stringify(item)) || archive.some(existing => !existing.kind &&
+          existing.id === item.id && existing.notes === item.notes &&
+          JSON.stringify(existing.wordIds) === JSON.stringify(item.wordIds))) continue
+      archive.push(item)
+      known.add(JSON.stringify(item))
+    }
+  }
+  if (archive.length) after.relationArchive = archive
+}
+
 export function undoPatch(before: LibraryState, after: LibraryState, current: LibraryState): LibraryState {
   const restored = structuredClone(current)
+  const currentTexts = new Set(Object.values(current.words).map(word => normalizeEntryText(word.text)))
+  for (const word of Object.values(before.words)) {
+    if (!after.words[word.id] && !current.words[word.id] && currentTexts.has(normalizeEntryText(word.text))) {
+      throw new Error('已存在同名词，请在管理页检查；后续录入已保留。')
+    }
+  }
   for (const section of ['words','groups','synonymSets','customSets','stats'] as const) {
     const keys = new Set([...Object.keys(before[section] ?? {}), ...Object.keys(after[section] ?? {})])
     for (const id of keys) {
@@ -74,13 +108,20 @@ export function undoPatch(before: LibraryState, after: LibraryState, current: Li
       else (restored[section] as Record<string, unknown>)[id] = structuredClone(prior)
     }
   }
+  // Only undo archive entries created by this action. Preserve newer entries.
+  const priorArchive = new Set((before.relationArchive ?? []).map(item => JSON.stringify(item)))
+  const additions = new Set((after.relationArchive ?? []).map(item => JSON.stringify(item)).filter(key => !priorArchive.has(key)))
+  if (additions.size && restored.relationArchive) {
+    restored.relationArchive = restored.relationArchive.filter(item => !additions.has(JSON.stringify(item)))
+    if (!restored.relationArchive.length) delete restored.relationArchive
+  }
   return reconcileRelations(restored)
 }
 
 /** Preserve deleted content without overwriting later relationship edits. */
 export function restoreDeletedWord(before: LibraryState, current: LibraryState, id: string): LibraryState {
   const original = before.words[id]
-  if (!original || current.words[id] || Object.values(current.words).some(w => w.text === original.text)) {
+  if (!original || current.words[id] || Object.values(current.words).some(w => normalizeEntryText(w.text) === normalizeEntryText(original.text))) {
     throw new Error('已存在同名词或该词已恢复，请在管理页检查；后续编辑已保留。')
   }
   const next = structuredClone(current)

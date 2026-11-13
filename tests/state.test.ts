@@ -36,3 +36,19 @@ test('old backups default offline; synonym mode and optional key survive validat
   assert.throws(() => normalizeState({ ...legacy, settings: { synonymMode: 'auto-merge' } }, defaults))
   assert.throws(() => normalizeState({ ...legacy, settings: { synonymApiKey: 'x'.repeat(257) } }, defaults))
 })
+
+test('backup rejects inherited keys and phantom relation members', () => {
+  const hostile = structuredClone(legacy)
+  Object.defineProperty(hostile.words, '__proto__', {
+    value: { ...hostile.words.a, id: '__proto__' }, enumerable: true,
+  })
+  assert.throws(() => normalizeState(hostile, defaults), /单词数据/)
+  assert.throws(() => normalizeState({
+    ...legacy,
+    synonymSets: { s: { id: 's', name: 'Invalid', notes: '', createdAt: 1, wordIds: ['a', 'constructor'] } },
+  }, defaults), /近义词群关系/)
+})
+
+test('invalid relation archives are rejected without discarding data', () => {
+  assert.throws(() => normalizeState({ ...legacy, relationArchive: {} }, defaults), /关系归档/)
+})

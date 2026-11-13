@@ -3,10 +3,9 @@ import { APP_VERSION, APP_VERSION_LABEL } from '@/lib/version'
 import SynonymSettings from '@/sections/SynonymSettings'
 import { Database, LibraryBig, SlidersHorizontal, BookOpen, CircleHelp, Download, Upload } from 'lucide-react'
 import DataTransfer, {OpenDataFolder} from '@/sections/DataTransfer'
-import { memo, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useLibrary } from '@/store/library'
-import { clusterWords } from '@/lib/similarity'
 import type { DictProviderConfig } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -525,23 +524,42 @@ export default function Settings({
 
   const wordList = useMemo(() => Object.values(state.words), [state.words])
 
-  /** live preview of what the *draft* threshold would produce */
+  const [calculation, setCalculation] = useState<{
+    words: typeof state.words
+    groups: typeof state.groups
+    threshold: number
+    clusters?: string[][]
+  } | null>(null)
+  const current = calculation?.words === state.words && calculation.groups === state.groups &&
+    calculation.threshold === shown ? calculation : null
+  const clusters = current?.clusters
   const preview = useMemo(() => {
-    if (wordList.length === 0) return null
-    const locked = Object.values(state.groups)
-      .filter((g) => g.manual && g.wordIds.length > 1)
-      .map((g) => g.wordIds)
-    const clusters = clusterWords(
-      wordList.map((w) => ({ id: w.id, text: w.text, phonetic: w.phonetic })),
-      shown,
-      locked,
-    )
-    return {
-      total: clusters.length,
-      multi: clusters.filter((c) => c.length > 1).length,
-      grouped: clusters.filter((c) => c.length > 1).flat().length,
-    }
-  }, [wordList, state.groups, shown])
+    if (!clusters) return null
+    const multi = clusters.filter(group => group.length > 1)
+    return { total: clusters.length, multi: multi.length, grouped: multi.reduce((count, group) => count + group.length, 0) }
+  }, [clusters])
+
+  useEffect(() => {
+    if (!wordList.length) return
+    let worker: Worker | undefined
+    const timer = window.setTimeout(() => {
+      worker = new Worker(new URL('../lib/recluster.worker.ts', import.meta.url), { type: 'module' })
+      worker.onmessage = (event: MessageEvent<string[][]>) => {
+        setCalculation({ words: state.words, groups: state.groups, threshold: shown, clusters: event.data })
+        worker?.terminate()
+      }
+      worker.onerror = () => {
+        setCalculation({ words: state.words, groups: state.groups, threshold: shown })
+        worker?.terminate()
+      }
+      worker.postMessage({
+        words: wordList.map(({ id, text, phonetic }) => ({ id, text, phonetic })),
+        threshold: shown,
+        locked: Object.values(state.groups).filter(group => group.manual && group.wordIds.length > 1).map(group => group.wordIds),
+      })
+    }, 150)
+    return () => { window.clearTimeout(timer); worker?.terminate() }
+  }, [wordList, state.words, state.groups, shown])
 
   function fuzzyLabel(v: number): string {
     if (v <= 0.58) return '非常宽松 · 更容易匹配，建议检查分组结果'
@@ -581,10 +599,14 @@ export default function Settings({
           </div>
         </div>
         <div className="settings-detail flex flex-wrap items-center justify-between gap-4">
-          <p className="min-w-0 text-sm text-muted-foreground">{preview ? `分组预览：${preview.multi} 个多词组，包含 ${preview.grouped} 个词；共 ${preview.total} 组。` : '录入形近词后，可预览并调整分组。'}</p>
-          <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" disabled={wordList.length === 0}>重新分组形近词</Button></AlertDialogTrigger>
+          <p className="min-w-0 text-sm text-muted-foreground">{preview ? `分组预览：${preview.multi} 个多词组，包含 ${preview.grouped} 个词；共 ${preview.total} 组。` : wordList.length ? (current ? '分组预览未能完成。' : '正在计算分组预览…') : '录入形近词后，可预览并调整分组。'}</p>
+          <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" disabled={!clusters || shown !== t}>重新分组形近词</Button></AlertDialogTrigger>
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重新分组？</AlertDialogTitle><AlertDialogDescription>将以阈值 {shown.toFixed(2)} 重新计算所有单词的形近关系，保留手动形近组。近义关系与学习记录保持。</AlertDialogDescription></AlertDialogHeader>
-              <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => { recluster(); toast.success('已按当前阈值重新分组') }}>重新分组</AlertDialogAction></AlertDialogFooter>
+              <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction disabled={!clusters || shown !== t} onClick={() => {
+                if (!clusters) return
+                try { recluster(state, clusters); toast.success('已按当前阈值重新分组') }
+                catch (error) { toast.error(error instanceof Error ? error.message : '重新分组未完成') }
+              }}>重新分组</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
         </div>
@@ -637,15 +659,15 @@ export default function Settings({
         <AlertDialog open={pendingImport !== null} onOpenChange={open => { if (!open) setPendingImport(null) }}>
           <AlertDialogContent>
             <AlertDialogHeader><AlertDialogTitle>导入备份？</AlertDialogTitle><AlertDialogDescription className="break-all">将导入「{pendingImport?.name}」，替换当前单词、分组和学习记录。当前词库会保存为导入前副本，供之后恢复。</AlertDialogDescription></AlertDialogHeader>
-            <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => {
-              if (pendingImport && importState(pendingImport.text)) toast.success('备份已导入')
+            <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={async () => {
+              if (pendingImport && await importState(pendingImport.text)) toast.success('备份已导入')
               else toast.error('导入失败：文件格式不正确')
               setPendingImport(null)
             }}>确认导入</AlertDialogAction></AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        {!!state.relationArchive?.length && <div className="mt-4 rounded-lg border p-4 text-sm"><p>旧版多重近义关系已整理为每词一个近义组。完整原关系与笔记保存在归档中（{state.relationArchive.length} 项），可随备份保留。</p><Button variant="outline" size="sm" className="mt-2" onClick={() => { const url=URL.createObjectURL(new Blob([JSON.stringify(state.relationArchive,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='lexicon-relation-archive.json';a.click();URL.revokeObjectURL(url) }}>导出旧关系归档</Button></div>}
+        {!!state.relationArchive?.length && <div className="mt-4 rounded-lg border p-4 text-sm"><p>已拆解或迁移的关系及其原成员和笔记保存在归档中（{state.relationArchive.length} 项），可随备份保留。</p><Button variant="outline" size="sm" className="mt-2" onClick={() => { const url=URL.createObjectURL(new Blob([JSON.stringify(state.relationArchive,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='lexicon-relation-archive.json';a.click();URL.revokeObjectURL(url) }}>导出关系归档</Button></div>}
         <p className="mt-3 text-xs leading-5 text-muted-foreground">桌面版另存每日快照。建议定期导出至其他位置；备份文件可能包含你配置的词典凭据。</p>
         <div className="backup-maintenance mt-6 border-t pt-5"><DataTransfer/><div className="backup-delete">
         <AlertDialog>

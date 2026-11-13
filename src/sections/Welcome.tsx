@@ -201,9 +201,11 @@ function useDailyWord(
 export default function Welcome({
   onStartQuiz,
   onLocateGroup,
+  active = true,
 }: {
   onStartQuiz: () => void
-  onLocateGroup: (groupId: string) => void
+  onLocateGroup: (wordId: string) => void
+  active?: boolean
 }) {
   const { state } = useLibrary()
   const daily = useDailyWord(state.settings.dictProviders, state.words)
@@ -405,7 +407,8 @@ export default function Welcome({
                     {!dailyInLibrary &&
                       (daily.data ? (
                         <UnifiedEntry
-                          onLocateWord={id => onLocateGroup(state.words[id]?.groupId ?? id)}
+                          onLocateWord={onLocateGroup}
+                          visible={active}
                           knownInput={{...daily.data,source:'api'}}
                           renderTrigger={(add,busy) => <Button variant="outline" size="sm" className="pressable mt-4" onClick={add} disabled={busy}>{busy ? '正在归组…' : '加入词库'}</Button>}
                         />
@@ -483,7 +486,7 @@ export default function Welcome({
 
         {/* quick add — same component as the library page */}
         <div className="stagger-in" style={{ transitionDelay: '120ms' }}>
-          <AddWordCard onLocateGroup={onLocateGroup} />
+          <AddWordCard onLocateGroup={onLocateGroup} active={active} />
         </div>
 
         {/* start review */}

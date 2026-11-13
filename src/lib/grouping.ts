@@ -86,19 +86,24 @@ export function mergeGroups(state:LibraryState,source:DragItem,target:GroupRef,k
   const fromIds=source.wordId?[source.wordId]:original
   const ids=[...new Set([...targetIds,...fromIds])]
   if(ids.length<2)throw new Error('至少需要两个不同的单词')
-  const inferred=source.ref.kind===target.kind && target.kind!=='isolated'?target.kind:
-    source.ref.kind==='isolated' && target.kind!=='isolated'?target.kind:
+  const inferred=target.kind!=='isolated' && (source.wordId || source.ref.kind===target.kind || source.ref.kind==='isolated')?target.kind:
     target.kind==='isolated' && source.ref.kind!=='isolated'?source.ref.kind:undefined
   const resultKind=kind??inferred??'custom'
   const pending=!kind && !inferred
   const from=source.ref.kind==='isolated'?undefined:structuredClone(requireGroup(state,source.ref))
   const into=target.kind==='isolated'?undefined:structuredClone(requireGroup(state,target))
-  const id=target.kind===resultKind?target.id:uid()
+  const inherited = into ?? (source.wordId ? undefined : from)
+  const id = target.kind === resultKind ? target.id :
+    !source.wordId && source.ref.kind === resultKind ? source.ref.id : uid()
   const notes=[into?.notes,...(!source.wordId?[from?.notes]:[])].filter((note):note is string=>!!note&&!!userNotes(note)).filter((note,i,all)=>all.indexOf(note)===i).join('\n\n')
-  const provenance=[into?.provenance,from?.provenance].filter(Boolean).join('\n\n')
-  consume(state,source.ref,source.wordId);consume(state,target)
+  const provenance=[into?.provenance,...(!source.wordId?[from?.provenance]:[])].filter(Boolean).join('\n\n')
+  // Dropping a member into a different type adds that relationship alongside the original.
+  if (!source.wordId || source.ref.kind === resultKind || target.kind !== resultKind) {
+    consume(state,source.ref,source.wordId)
+  }
+  consume(state,target)
   detach(state,resultKind,ids)
-  write(state,resultKind,id,ids,{name:into?.name,notes,provenance,nameSource:into && 'nameSource' in into?into.nameSource:undefined,pendingTypeChoice:pending || (resultKind==='custom' && !!into && 'pendingTypeChoice' in into && !!into.pendingTypeChoice),createdAt:into?.createdAt})
+  write(state,resultKind,id,ids,{name:inherited?.name,notes,provenance,nameSource:inherited && 'nameSource' in inherited ? inherited.nameSource : undefined,pendingTypeChoice:pending || (resultKind==='custom' && !!into && 'pendingTypeChoice' in into && !!into.pendingTypeChoice),createdAt:inherited?.createdAt})
   repair(state)
   return {groupRef:{kind:resultKind,id},needsTypeChoice:pending}
 }
@@ -109,10 +114,11 @@ export function setGroupKind(state:LibraryState,ref:GroupRef,kind:GroupKind):Gro
     if('pendingTypeChoice' in table(state,kind)[ref.id])(table(state,kind)[ref.id] as SynonymSet).pendingTypeChoice=false
     return ref
   }
+  const id = Object.hasOwn(table(state,kind), ref.id) ? uid() : ref.id
   consume(state,ref);detach(state,kind,ids)
-  write(state,kind,ref.id,ids,{...group,pendingTypeChoice:false})
+  write(state,kind,id,ids,{...group,pendingTypeChoice:false})
   repair(state)
-  return {kind,id:ref.id}
+  return {kind,id}
 }
 
 export function saveGroup(state:LibraryState,ref:GroupRef|NewRef,input:{name:string;notes:string;wordIds:string[]}):GroupRef {

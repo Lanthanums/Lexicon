@@ -148,7 +148,7 @@ function ChartEmpty({
   text: string
 }) {
   return (
-    <div className="flex h-56 flex-col items-center justify-center rounded-xl border border-dashed bg-background/40 px-6 text-center">
+    <div className="flex min-h-56 flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-background/40 px-6 text-center">
       <Icon className="size-7 text-primary/50" strokeWidth={1.5} />
       <p className="mt-3 text-sm font-medium">{title}</p>
       <p className="mt-1.5 max-w-xs text-xs leading-5 text-muted-foreground">{text}</p>
@@ -202,7 +202,7 @@ export default function ReviewCharts() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         {/* forecast */}
-        <div className="min-w-0 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex min-w-0 flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-medium">已熟识与需巩固词数</p>
@@ -239,11 +239,11 @@ export default function ReviewCharts() {
           ) : (
             <>
               {forecast.dueWithinHorizon === 0 ? (
-                <p className="mt-3 rounded-lg bg-background px-3 py-2 text-xs leading-5 text-muted-foreground">
+                <p className="rounded-lg bg-background px-3 py-2 text-xs leading-5 text-muted-foreground">
                   未来 7 天暂无到期复习，预计构成保持不变。
                 </p>
               ) : null}
-              <div className="mt-3 h-56 w-full" role="img" aria-label="未来七天已熟识与需巩固词数折线图">
+              <div className="h-56 w-full" role="img" aria-label="未来七天已熟识与需巩固词数折线图">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={forecast.days}
@@ -296,13 +296,13 @@ export default function ReviewCharts() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">未来一周有 {forecast.dueWithinHorizon} 个词待复习。</p>
+              <p className="border-t pt-3 text-xs text-muted-foreground">未来一周有 {forecast.dueWithinHorizon} 个词待复习。</p>
             </>
           )}
         </div>
 
         {/* pie */}
-        <div className="min-w-0 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex min-w-0 flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-medium">当前掌握构成</p>
@@ -323,7 +323,7 @@ export default function ReviewCharts() {
             />
           ) : (
             <>
-              <div className="relative mt-2 h-52 w-full">
+              <div className="relative h-52 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -352,7 +352,7 @@ export default function ReviewCharts() {
                   <span className="mt-1 text-[11px] text-muted-foreground">个单词</span>
                 </div>
               </div>
-              <ul className="mt-1 grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-xs">
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-xs">
                 {pieData.map((item) => {
                   const percent =
                     distribution.total > 0
@@ -379,7 +379,7 @@ export default function ReviewCharts() {
                   )
                 })}
               </ul>
-              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-5 text-muted-foreground">
+              <p className="flex items-start gap-1.5 text-[11px] leading-5 text-muted-foreground">
                 <Info className="mt-0.5 size-3 shrink-0" />
                 0 陌生（含未学）· 1–2 有印象 · 3–4 已掌握 · 5 已熟识
               </p>

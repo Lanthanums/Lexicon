@@ -64,20 +64,26 @@ async function checkQuizSetup(theme) {
 }
 
 async function checkSticky(theme) {
-  const sticky = page.locator('.management-sticky')
+  const frame = page.locator('.management-sticky')
+  const sticky = page.locator('.management-sticky-inner')
   await sticky.waitFor()
   for (const width of [1440, 820, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(() => window.scrollTo(0, 0))
     const before = await sticky.boundingBox()
     await page.evaluate(() => window.scrollTo(0, 670))
-    await page.waitForFunction(() => Math.abs(document.querySelector('.management-sticky').getBoundingClientRect().top) < 1)
+    await page.waitForFunction(() => Math.abs(document.querySelector('.management-sticky').getBoundingClientRect().top) < 1 &&
+      document.querySelector('.management-sticky').dataset.stuck === 'true')
     const after = await sticky.boundingBox()
     const effect = await sticky.evaluate(element => {
       const glow = getComputedStyle(element, '::before')
       return { filter: glow.backdropFilter, mask: glow.maskImage, pointerEvents: glow.pointerEvents }
     })
-    assert.ok(Math.abs(before.height - after.height) < 1)
+    // Pinned controls condense inside a frame that keeps its resting height, so the
+    // document height never changes at the pinning point and scrolling stays smooth.
+    assert.ok(after.height < before.height)
+    assert.ok(Math.abs((await frame.boundingBox()).height - before.height) < 1.5)
+    assert.equal(await frame.evaluate(element => getComputedStyle(element).pointerEvents), 'none')
     assert.equal(effect.filter, 'blur(14px)')
     assert.match(effect.mask, /linear-gradient/)
     assert.equal(effect.pointerEvents, 'none')
@@ -164,7 +170,8 @@ async function launch() {
   await shot('17-quiz-long-dark')
   const prompt = await page.locator('.quiz-prompt').boundingBox()
   const response = await page.locator('.quiz-response').boundingBox()
-  assert.ok(response.x > prompt.x + 300)
+  // One column: the answers sit directly under the prompt at every width.
+  assert.ok(response.y >= prompt.y + prompt.height - 1 && Math.abs(response.x - prompt.x) < 1)
   for (const width of [1920, 1280, 820, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await noOverflow()

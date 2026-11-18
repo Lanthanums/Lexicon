@@ -2,20 +2,22 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {archiveDissolvedRelations,reconcileRelations,undoPatch,restoreDeletedWord} from '../src/lib/relations'
 import {deriveManagementView,managementWords} from '../src/lib/managementView'
+import {normalizeState} from '../src/lib/state'
 import type {LibraryState} from '../src/types/index'
 const fixture=():LibraryState=>({words:{a:{id:'a',text:'calm',gloss:'平静',meanings:[],groupId:'g',addedAt:1,source:'manual'},b:{id:'b',text:'balm',gloss:'膏',meanings:[],groupId:'g',addedAt:2,source:'manual'},c:{id:'c',text:'serene',gloss:'宁静',meanings:[],groupId:'c',addedAt:3,source:'manual'}},groups:{g:{id:'g',wordIds:['a','b'],manual:true,createdAt:1},c:{id:'c',wordIds:['c'],kind:'single',manual:false,createdAt:3}},synonymSets:{s:{id:'s',name:'平静',notes:'原始笔记',wordIds:['a','c'],createdAt:1}},stats:{},settings:{threshold:.7,dictProviders:[]},learning:{enabled:false,addCount:0,traces:[]},activity:{}})
 test('dual membership is one shape and one synonym; list deduplicates and synonyms are not isolated',()=>{
  const state=reconcileRelations(fixture()), view=deriveManagementView(state)
- assert.equal(view.relations.a.shapeId,'g');assert.equal(view.relations.a.synonymId,'s');assert.equal(view.relations.c.isolated,false)
+ assert.equal(view.relations.a.shapeId,'g');assert.deepEqual(view.relations.a.synonymIds,['s']);assert.equal(view.relations.c.isolated,false)
  assert.equal(managementWords(view.cards,'az').length,3)
 })
-test('multiple synonyms fail manual edits; legacy overlap is archived without losing notes',()=>{
+test('overlapping groups and historical archives survive opening older snapshots and exporting again',()=>{
  const state=fixture();state.synonymSets.second={id:'second',name:'another',notes:'keep',wordIds:['a','b'],createdAt:2}
- assert.throws(()=>reconcileRelations(state))
- const migrated=reconcileRelations(state,true)
- assert.equal(Object.values(migrated.synonymSets).filter(g=>g.wordIds.includes('a')).length,1)
- assert.ok(migrated.relationArchive?.some(g=>g.notes==='原始笔记'&&g.wordIds.includes('a')))
- assert.equal(Object.keys(migrated.words).length,3)
+ state.relationArchive=[{id:'historical',name:'归档',notes:'旧笔记',wordIds:['a','b'],createdAt:1}]
+ const migrated=normalizeState(JSON.parse(JSON.stringify(state)),state)
+ assert.deepEqual(migrated.synonymSets,state.synonymSets)
+ assert.deepEqual(migrated.relationArchive,state.relationArchive)
+ assert.deepEqual(deriveManagementView(migrated).relations.a.synonymIds,['s','second'])
+ assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(migrated)),state),migrated)
 })
 test('undo restores deleted relations and preserves unrelated later additions; rejects conflicting later edits',()=>{
  const before=reconcileRelations(fixture());const deleted=structuredClone(before)

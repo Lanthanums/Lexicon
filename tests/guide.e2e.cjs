@@ -8,9 +8,21 @@ async function shot(name){await page.screenshot({path:path.join(out,name+'.png')
 async function beginFrames(){await page.evaluate(()=>{cancelAnimationFrame(window._guideRAF);window._frames=[];window._recording=true;function tick(){if(!window._recording)return;const root=document.querySelector('.guided-tour'),panel=document.querySelector('.guide-panel'),dialog=document.querySelector('[data-slot="dialog-content"]');if(root&&panel){const s=getComputedStyle(panel),r=panel.getBoundingClientRect(),d=dialog?.getBoundingClientRect();window._frames.push({step:root.dataset.guideStep,phase:root.dataset.phase,placed:root.dataset.placed,visibility:s.visibility,opacity:Number(s.opacity),x:r.x,y:r.y,w:r.width,h:r.height,viewport:[innerWidth,innerHeight],dialog:d?{x:d.x,y:d.y,w:d.width,h:d.height}:null})}window._guideRAF=requestAnimationFrame(tick)}window._guideRAF=requestAnimationFrame(tick)})}
 async function endFrames(label){const frames=await page.evaluate(()=>{window._recording=false;cancelAnimationFrame(window._guideRAF);return window._frames});assert.ok(frames.length>10);for(const f of frames){if(f.visibility==='hidden'||f.opacity<.02)continue;assert.equal(f.placed,'true','visible panel is positioned before painting');assert.ok(f.x>=0&&f.y>=0&&f.x+f.w<=f.viewport[0]+1&&f.y+f.h<=f.viewport[1]+1,'frame stays on screen');if(f.phase==='locating')assert.fail('locating frame was visible')}
 await fs.writeFile(path.join(out,'frames-'+label+'.json'),JSON.stringify(frames,null,2));return frames}
-async function drag(source,target,card=false){
- const a=await source.boundingBox(),b=await target.boundingBox(),sx=a.x+20,sy=a.y+(card?8:15),tx=b.x+30,ty=b.y+20
- await page.mouse.move(sx,sy);await page.mouse.down();await page.mouse.move(sx+5,sy+5,{steps:3});await page.mouse.move(tx,ty,{steps:14});await page.mouse.move(tx+1,ty+1,{steps:2});await page.mouse.up()
+async function drag(source,target,card=false,inspect){
+ const a=await source.boundingBox(),sx=a.x+20,sy=a.y+(card?8:15)
+ const {tx,ty}=await target.evaluate((element,fraction)=>{
+  const bounds=element.getBoundingClientRect(),tx=bounds.left+bounds.width*fraction
+  const ty=[20,bounds.height*.35,bounds.height*.6,bounds.height*.8]
+   .map(offset=>bounds.top+offset).find(y=>element.contains(document.elementFromPoint(tx,y)))
+  if(ty===undefined)throw new Error('Guide destination is covered')
+  return {tx,ty}
+ },card ? .9 : .1)
+ assert.equal(await source.evaluate((element,{sx,sy})=>element.contains(document.elementFromPoint(sx,sy)),{sx,sy}),true)
+ await page.mouse.move(sx,sy);await page.mouse.down()
+ try{
+  await page.mouse.move(sx+12,sy,{steps:3});await page.mouse.move(tx,ty,{steps:14});await page.mouse.move(tx+1,ty+1,{steps:2})
+  await inspect?.()
+ }finally{await page.mouse.up()}
 }
 async function completed(){await guide().getByText('这个技巧已试过了',{exact:true}).waitFor();await page.waitForTimeout(150)}
 async function next(){await guide().getByRole('button',{name:'下一个技巧',exact:true}).click()}
@@ -20,7 +32,16 @@ async function gestureCourse({keyboard=false,capture=false}={}){
  await guide().getByRole('button',{name:'试试隐藏技巧',exact:true}).click();await arrive('word')
  assert.equal(await page.locator('.guide-practice [data-drag-word]').count(),7)
  const scout=page.locator('[data-drag-word="guide-scout"]'),letters=page.locator('[data-card-id="guide-letters"]')
- await drag(scout,letters)
+ await drag(scout,letters,false,keyboard?async()=>{
+  const live=letters.locator('[data-drop-overlay][data-active-kind=shape]')
+  await live.waitFor({timeout:5000})
+  assert.equal(await live.locator('.drop-zone-grid').evaluate(el=>getComputedStyle(el).transitionProperty),'none')
+  assert.ok(await live.locator('[data-drop-zone]').evaluateAll(zones=>zones.every(el=>{
+   const text=el.querySelector('span')
+   return text.getBoundingClientRect().width <= el.clientWidth
+  })))
+  if(capture)await shot('drop-zones-dark-390')
+ }:undefined)
  await guide().getByRole('button',{name:'下一个技巧',exact:true}).waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('.guide-panel button:last-of-type:disabled'))
  await page.locator('[data-card-id="guide-letters"] [data-drag-word="guide-scout"]').waitFor()
  await completed();if(capture)await shot('motion-'+page.viewportSize().width+'-word-drag')
@@ -30,7 +51,7 @@ async function gestureCourse({keyboard=false,capture=false}={}){
  await completed();if(capture)await shot('motion-'+page.viewportSize().width+'-card-merge')
  await next();await arrive('sort')
  const grip=page.locator('[data-editor-row-id="guide-stout"] .management-grip'),row=page.locator('[data-editor-row-id="guide-spout"]')
- if(keyboard){await grip.focus();await grip.press('ArrowDown')}else{const a=await grip.boundingBox(),b=await row.boundingBox();await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();await page.waitForTimeout(300);await page.mouse.move(b.x+45,b.y+b.height-5,{steps:10});await page.mouse.up()}
+ if(keyboard){await grip.focus();await grip.press('ArrowDown')}else{const a=await grip.boundingBox(),b=await row.boundingBox();await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();await page.mouse.move(b.x+45,b.y+b.height-5,{steps:10});await page.mouse.up()}
  await page.waitForFunction(()=>document.querySelector('[data-editor-row-id]')?.dataset.editorRowId==='guide-spout')
  await completed();if(capture)await shot('motion-'+page.viewportSize().width+'-hold-sort')
  await next();await arrive('mastery')

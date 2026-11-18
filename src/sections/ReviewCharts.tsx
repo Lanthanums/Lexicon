@@ -332,7 +332,7 @@ export default function ReviewCharts() {
                       nameKey="name"
                       innerRadius="58%"
                       outerRadius="84%"
-                      paddingAngle={2}
+                      paddingAngle={pieData.filter(entry => entry.value > 0).length > 1 ? 2 : 0}
                       startAngle={90}
                       endAngle={-270}
                       stroke="none"

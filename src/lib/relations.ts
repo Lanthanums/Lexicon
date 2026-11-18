@@ -1,6 +1,12 @@
 import { normalizeEntryText } from './batchEntry'
 import type { ArchivedRelation, LibraryState } from '../types/index'
 
+function availableShapeId(groups: LibraryState['groups'], preferred: string): string {
+  let id = preferred
+  for (let suffix = 2; Object.hasOwn(groups, id); suffix++) id = `${preferred}-${suffix}`
+  return id
+}
+
 /** Keep the legacy storage format; singleton shape buckets are storage only. */
 export function reconcileRelations(input: LibraryState, migrate = false): LibraryState {
   const state = structuredClone(input)
@@ -24,29 +30,22 @@ export function reconcileRelations(input: LibraryState, migrate = false): Librar
   for (const word of Object.values(state.words)) {
     let gid = memberships.get(word.id)
     if (!gid) {
-      gid = 'single-' + word.id
+      // A singleton's original ID may now identify a multi-word group.
+      gid = availableShapeId(state.groups, 'single-' + word.id)
       state.groups[gid] = { id: gid, wordIds: [word.id], kind: 'single', manual: false, createdAt: word.addedAt }
     }
     word.groupId = gid
   }
-  const assigned = new Set<string>()
   const archive: ArchivedRelation[] = [...(state.relationArchive ?? [])]
-  // The newest legacy relation wins; retain full conflicting notes/membership in the archive.
-  const groups = Object.values(state.synonymSets).sort((a,b) => b.createdAt-a.createdAt || a.id.localeCompare(b.id))
-  state.synonymSets = {}
-  for (const original of groups) {
+  for (const [id, original] of Object.entries(state.synonymSets)) {
     const ids = [...new Set(original.wordIds)].filter(id => !!state.words[id])
-    const conflicting = ids.some(id => assigned.has(id))
-    if (conflicting && !migrate) throw new Error('一个词只能属于一个近义组，请先移出原组')
-    if (conflicting && !archive.some(g => g.id === original.id && JSON.stringify(g) === JSON.stringify(original))) archive.push(original)
-    const kept = ids.filter(id => !assigned.has(id))
     // Old drafts with one member retain their text, but are not active relations.
-    if (kept.length < 2) {
-      if (migrate && !archive.some(g => g.id === original.id)) archive.push(original)
-      continue
+    if (ids.length < 2) {
+      if (migrate && !archive.some(g => g.id === id)) archive.push(original)
+      delete state.synonymSets[id]
+    } else {
+      original.wordIds = ids
     }
-    state.synonymSets[original.id] = { ...original, wordIds: kept }
-    kept.forEach(id => assigned.add(id))
   }
   const customAssigned = new Set<string>()
   state.customSets = { ...(state.customSets ?? {}) }
@@ -125,7 +124,7 @@ export function restoreDeletedWord(before: LibraryState, current: LibraryState, 
     throw new Error('已存在同名词或该词已恢复，请在管理页检查；后续编辑已保留。')
   }
   const next = structuredClone(current)
-  const groupId = `recovered-${id}`
+  const groupId = availableShapeId(next.groups, `recovered-${id}`)
   next.words[id] = { ...structuredClone(original), groupId }
   next.groups[groupId] = { id: groupId, wordIds: [id], kind: 'single', manual: true, createdAt: Date.now() }
   if (before.stats[id]) next.stats[id] = structuredClone(before.stats[id])

@@ -1,6 +1,6 @@
 const { app, BrowserWindow, protocol, ipcMain, shell, dialog, nativeTheme } = require('electron')
 const { access, readFile, writeFile, mkdir } = require('node:fs/promises')
-const { replaceSnapshot } = require('./snapshot.cjs')
+const { replaceSnapshot, createSnapshotWriter } = require('./snapshot.cjs')
 const path = require('node:path')
 const { lookup } = require('node:dns/promises')
 const { isIP } = require('node:net')
@@ -21,19 +21,21 @@ function validSnapshot(raw) {
   if (!state || !state.words || !state.groups || typeof state.words !== 'object' || Array.isArray(state.words) || typeof state.groups !== 'object' || Array.isArray(state.groups)) throw new Error('词库文件格式错误')
   return state
 }
+const writeSnapshot = createSnapshotWriter(async raw => {
+  const dest = dataFile()
+  await mkdir(path.dirname(dest), { recursive: true })
+  const day = new Date().toLocaleDateString('sv-SE')
+  // First snapshot of each day remains available alongside the latest copy.
+  await writeFile(path.join(path.dirname(dest), day + '.json'), raw, { flag: 'wx' }).catch(e => { if (e.code !== 'EEXIST') throw e })
+  await writeFile(dest + '.tmp', raw, 'utf8')
+  await replaceSnapshot(dest + '.tmp', dest)
+})
 let snapshotQueue = Promise.resolve()
-async function saveSnapshot(raw) {
+function saveSnapshot(raw) {
   validSnapshot(raw)
-  snapshotQueue = snapshotQueue.catch(() => {}).then(async () => {
-    const dest = dataFile()
-    await mkdir(path.dirname(dest), { recursive: true })
-    const day = new Date().toLocaleDateString('sv-SE')
-    // First snapshot of each day remains available alongside the latest copy.
-    await writeFile(path.join(path.dirname(dest), day + '.json'), raw, { flag: 'wx' }).catch(e => { if (e.code !== 'EEXIST') throw e })
-    await writeFile(dest + '.tmp', raw, 'utf8')
-    await replaceSnapshot(dest + '.tmp', dest)
-  })
-  return snapshotQueue
+  const saved = writeSnapshot(raw)
+  snapshotQueue = saved.catch(() => {})
+  return saved
 }
 function isPrivate(ip) {
   const normalized = ip.toLowerCase()
@@ -44,12 +46,21 @@ function isPrivate(ip) {
   const [a, b] = ip.split('.').map(Number)
   return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224
 }
-async function publicTarget(raw) {
+function untilAborted(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new Error('Dictionary request timed out'))
+    if (signal.aborted) return abort()
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+async function publicTarget(raw, signal) {
   const target = new URL(raw)
   if (target.protocol !== 'https:' || target.username || target.password || (target.port && target.port !== '443')) throw new Error('Only public HTTPS dictionary URLs are allowed')
   const host = target.hostname.replace(/^\[|\]$/g, '')
   if (/^(localhost|.*\.(localhost|local|internal))$/i.test(host)) throw new Error('Local target blocked')
-  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true })
+  // DNS can stall far longer than the request budget on unstable networks.
+  const addresses = isIP(host) ? [{ address: host }] : await untilAborted(lookup(host, { all: true }), signal)
   if (!addresses.length || addresses.some(a => isPrivate(a.address))) throw new Error('Private target blocked')
   return target
 }
@@ -59,7 +70,7 @@ async function proxy(raw) {
   const timer = setTimeout(() => controller.abort(), 15000)
   try {
     for (let i = 0; i < 5; i++) {
-      const url = await publicTarget(target)
+      const url = await publicTarget(target, controller.signal)
       const upstream = await fetch(url, { redirect: 'manual', signal: controller.signal, headers: { 'user-agent': `Mozilla/5.0 Lexicon/${app.getVersion()}` } })
       if (upstream.status >= 300 && upstream.status < 400 && upstream.headers.get('location')) {
         target = new URL(upstream.headers.get('location'), url).href

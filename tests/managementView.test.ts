@@ -20,7 +20,7 @@ const state: LibraryState = {
 test('valid member counts derive both relationships without relying on legacy kind', () => {
   const view = deriveManagementView(state)
   assert.equal(view.relations.a.shapeId, 'shape')
-  assert.equal(view.relations.a.synonymId, 'syn')
+  assert.deepEqual(view.relations.a.synonymIds, ['syn'])
   assert.equal(view.relations.a.isolated, false)
   assert.equal(view.relations.c.isolated, true)
   assert.equal(view.cards.length, 3)
@@ -28,8 +28,8 @@ test('valid member counts derive both relationships without relying on legacy ki
 
 test('filters include every selected relationship and never label dual members isolated', () => {
   const view = deriveManagementView(state)
-  assert.deepEqual(filterManagementCards(view.cards, { shape: false, synonym: true, isolated: false }).map(c => c.id), ['syn'])
-  assert.deepEqual(filterManagementCards(view.cards, { shape: false, synonym: false, isolated: true }).flatMap(c => c.words.map(w => w.id)), ['c'])
+  assert.deepEqual(filterManagementCards(view.cards, { shape: false, synonym: true, custom:false, isolated: false }).map(c => c.id), ['syn'])
+  assert.deepEqual(filterManagementCards(view.cards, { shape: false, synonym: false, custom:false, isolated: true }).flatMap(c => c.words.map(w => w.id)), ['c'])
 })
 
 test('card timestamp uses newest member and list A-Z is one row per word', () => {

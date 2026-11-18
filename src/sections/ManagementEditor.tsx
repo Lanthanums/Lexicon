@@ -12,7 +12,8 @@ import {
 import { toast } from 'sonner'
 import {GuidedTourContext} from '@/lib/tutorial'
 import { useLibrary } from '@/store/library'
-import { saveGroup, setGroupKind } from '@/lib/grouping'
+import { removeGroupMember, saveGroup, setGroupKind } from '@/lib/grouping'
+import { wordSimilarity } from '@/lib/similarity'
 import { groupTitle, userNotes } from '@/lib/groupNames'
 import type { GroupKind, GroupRef, LibraryState, Word, WordMeaning } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -54,7 +55,16 @@ export interface ManagementEditorProps {
 
 type WordField = 'gloss' | 'phonetic' | 'meanings' | 'usageNote' | 'example'
 type WordEdit = Record<WordField, string>
-type GroupRecord = { id: string; name?: string; notes?: string; wordIds: string[]; pendingTypeChoice?: boolean }
+type GroupRecord = { id: string; name?: string; notes?: string; wordIds: string[]; nameSource?: 'auto' | 'manual' }
+
+const KIND_PREFIX = /^(?:形近组|近义组|近义词群|自定义组)\s*[·•:：-]?\s*/
+
+/** Only a name the person typed belongs in the field; derived titles stay a placeholder. */
+function editableName(group: GroupRecord | undefined): string {
+  const name = group?.name?.trim() ?? ''
+  if (!name || group?.nameSource === 'auto' || /[·•]\s*近义词(?:群|组)?\s*$/.test(name)) return ''
+  return name.replace(KIND_PREFIX, '')
+}
 
 interface EditorDraft {
   name: string
@@ -66,6 +76,7 @@ interface EditorDraft {
 }
 
 const KIND_ORDER: GroupKind[] = ['shape', 'synonym', 'custom']
+const CANDIDATE_LIMIT = 80
 
 const KIND_META: Record<GroupKind, { label: string; description: string; badge: string; dot: string }> = {
   shape: {
@@ -155,8 +166,7 @@ function WordRowMenu({
       const undo = pending === 'remove' ? onRemove(word) : onDelete(word)
       setOpen(false)
       setPending(null)
-      toast.success('操作已完成', {
-        description: title,
+      toast.success(pending === 'remove' ? `已从${groupLabel}移出「${word.text}」` : `已删除「${word.text}」`, {
         duration: 10000,
         action: undo
           ? {
@@ -250,7 +260,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
   const [initialGroup] = useState(() => readGroup(state,target))
   const anchorWord = target.kind === 'isolated' && target.id ? state.words[target.id] : undefined
   const [initial] = useState<EditorDraft>(() => ({
-    name: initialGroup && target.id ? safeGroupTitle(state,{kind:target.kind as GroupKind,id:target.id}).replace(/^(?:形近组|近义组|自定义组)\s*·\s*/,'') : '',
+    name: editableName(initialGroup),
     notes: userNotes(initialGroup?.notes ?? ''),
     kind: target.kind === 'isolated' ? 'custom' : target.kind,
     ids: (initialGroup?.wordIds ?? (target.kind === 'isolated' && target.id ? [target.id] : [])).filter(id => !!state.words[id]),
@@ -260,7 +270,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
 
   const [baseline,setBaseline] = useState(initial)
   const [draft, setDraft] = useState<EditorDraft>(initial)
-  const [kindTouched,setKindTouched] = useState(false)
+  const [previousWords, setPreviousWords] = useState(state.words)
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(() => !target.id)
   const [expandedId, setExpandedId] = useState<string | null>(focusWordId ?? (target.kind==='isolated'?target.id:null))
@@ -271,17 +281,18 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
   const [overId, setOverId] = useState<string | null>(null)
 
   const pressTimer = useRef<number | null>(null)
+  const addSearch = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
   const pressPointerType = useRef<string>('mouse')
   const armedRef = useRef<string | null>(null)
   const draggingRef = useRef(false)
   const dragSourceRef = useRef<string | null>(null)
   const touchDragRef = useRef<{ source: string; over: string | null; after: boolean } | null>(null)
-  const hadSourceRef = useRef(!!initialGroup)
-  const ownMembershipChange = useRef(false)
+  const [ownMembershipChange, setOwnMembershipChange] = useState(false)
 
   const sourceGroup = readGroup(state, target)
   const anchorMissing = target.kind === 'isolated' && !!target.id && !state.words[target.id]
-  const sourceMissing = anchorMissing || (hadSourceRef.current && target.kind !== 'isolated' && !sourceGroup && !ownMembershipChange.current)
+  const sourceMissing = anchorMissing || (!!initialGroup && target.kind !== 'isolated' && !sourceGroup && !ownMembershipChange)
 
   const selectedWords = draft.ids.map(id => state.words[id]).filter((word): word is Word => !!word)
   const selectedSet = useMemo(()=>new Set(draft.ids),[draft.ids])
@@ -294,7 +305,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
         ? `「${safeGroupTitle(state, { kind: target.kind as GroupKind, id: target.id as string })}」`
         : `「${draft.name.trim() || KIND_META[draft.kind].label}」`
 
-  const singleWorkspace=draft.ids.length===1 && (target.kind==='isolated'||ownMembershipChange.current)
+  const singleWorkspace=draft.ids.length===1 && (target.kind==='isolated'||ownMembershipChange)
   const headerTitle = singleWorkspace ? `管理「${state.words[draft.ids[0]]?.text??'单词'}」` : sourceMissing
     ? '关系已不存在'
     : initialGroup
@@ -310,30 +321,41 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
     Object.keys(draft.edits).length > 0 ||
     Object.keys(draft.mastery).length > 0
 
-  const candidates = useMemo(() => {
+  const { candidates, similar, candidateTotal } = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
-    return Object.values(state.words)
+    const matching = Object.values(state.words)
       .filter(word => !selectedSet.has(word.id))
       .filter(word => !needle || `${word.text} ${word.gloss} ${word.phonetic ?? ''}`.toLocaleLowerCase().includes(needle))
-      .sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }))
-      .slice(0, 80)
-  }, [state.words, query, selectedSet])
+    // For a shape group, spelling neighbours of the current members come first.
+    const scores = new Map<string, number>()
+    if (draft.kind === 'shape' && draft.ids.length) {
+      const members = draft.ids.map(id => state.words[id]).filter((word): word is Word => !!word)
+      const threshold = state.settings.threshold
+      for (const word of matching) {
+        const score = Math.max(...members.map(member => wordSimilarity(word.text, member.text, word.phonetic, member.phonetic).score))
+        if (score >= threshold - .1) scores.set(word.id, score)
+      }
+    }
+    const sorted = matching.sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0) ||
+      a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }))
+    return { candidates: sorted.slice(0, CANDIDATE_LIMIT), similar: scores, candidateTotal: sorted.length }
+  }, [state.words, state.settings.threshold, query, selectedSet, draft.kind, draft.ids])
 
   // Live deletions and external edits: never leave a ghost row in the draft.
-  useEffect(() => {
-    setDraft(current => {
-      const ids = current.ids.filter(id => !!state.words[id])
-      if (ids.length === current.ids.length) return current
-      const edits = { ...current.edits }
-      const mastery = { ...current.mastery }
-      for (const id of current.ids) {
+  if (state.words !== previousWords) {
+    setPreviousWords(state.words)
+    const ids = draft.ids.filter(id => !!state.words[id])
+    if (ids.length !== draft.ids.length) {
+      const edits = { ...draft.edits }
+      const mastery = { ...draft.mastery }
+      for (const id of draft.ids) {
         if (state.words[id]) continue
         delete edits[id]
         delete mastery[id]
       }
-      return { ...current, ids, edits, mastery }
-    })
-  }, [state.words])
+      setDraft({ ...draft, ids, edits, mastery })
+    }
+  }
 
   useEffect(() => {
     if (!dirty || guided) return
@@ -426,14 +448,18 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
   function startPress(word: Word, pointerType: string) {
     clearPressTimer()
     pressPointerType.current = pointerType
-    pressTimer.current = window.setTimeout(() => {
+    const arm = () => {
       armedRef.current = word.id
       setArmedId(word.id)
-      if (pointerType !== 'mouse') {
+      if (pointerType === 'touch') {
         touchDragRef.current = { source: word.id, over: null, after: false }
+        setAnnounce(`已按住「${word.text}」。拖动可排序，按上下方向键也可以调整顺序。`)
       }
-      setAnnounce(`已按住「${word.text}」。拖动可排序，按上下方向键也可以调整顺序。`)
-    }, 250)
+    }
+    // A mouse or pen drags straight from the handle. Touch keeps a short hold so a
+    // swipe over the handle still scrolls the list.
+    if (pointerType === 'touch') pressTimer.current = window.setTimeout(arm, 200)
+    else arm()
   }
 
   function endPress() {
@@ -513,7 +539,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
       toast.error('该关系已不存在，无法保存', { description: '请关闭工作区，回到管理页刷新后再试。' })
       return
     }
-    const single = draft.ids.length === 1 && (target.kind === 'isolated' || ownMembershipChange.current)
+    const single = draft.ids.length === 1 && (target.kind === 'isolated' || ownMembershipChange)
     if (draft.ids.length < 2 && !single) {
       toast.error('至少保留两个单词', { description: '关系组需要两个或更多成员；可以继续添加单词。' })
       setAddOpen(true)
@@ -534,25 +560,28 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
         if (target.kind === 'isolated') {
           if (!target.id) throw new Error('这个单词已不存在')
           ref = { kind: 'isolated', id: target.id }
-        } else if (target.id && !(ownMembershipChange.current && !readGroup(transactionDraft,target))) {
+        } else if (target.id && !(ownMembershipChange && !readGroup(transactionDraft,target))) {
           ref = { kind: target.kind, id: target.id }
-          if (draft.kind !== target.kind || (initialGroup?.pendingTypeChoice && kindTouched)) {
+          if (draft.kind !== target.kind) {
             ref = setGroupKind(transactionDraft, ref, draft.kind)
           }
         } else {
           ref = { kind: draft.kind }
         }
 
+        // An untouched name keeps its origin, so automatic titles keep following the members.
+        const keepName = !!initialGroup && draft.name.trim() === baseline.name.trim()
+        const current = ref.id && ref.kind !== 'isolated' ? readGroup(transactionDraft, ref as GroupRef) : undefined
         const result: GroupRef = single ? {kind:'isolated',id:draft.ids[0]} : saveGroup(transactionDraft, ref, {
-          name: draft.name.trim(),
+          name: keepName && !draft.name.trim() ? current?.name ?? '' : draft.name.trim(),
           notes: draft.notes.trim(),
           wordIds: [...draft.ids],
+          nameSource: keepName && !draft.name.trim() ? current?.nameSource ?? 'auto' : undefined,
         })
         savedRef = result
 
         if (target.kind === 'isolated' && !single) {
-          const provisional = readGroup(transactionDraft, result)
-          if (result.kind !== draft.kind || provisional?.pendingTypeChoice) {
+          if (result.kind !== draft.kind) {
             savedRef = setGroupKind(transactionDraft, result, draft.kind)
           }
         }
@@ -597,35 +626,24 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
       ids.splice(Math.max(0, Math.min(index, ids.length)), 0, wordId)
       return { ...current, ids }
     })
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>(
+        `[data-editor-row-id="${CSS.escape(wordId)}"] [data-slot="popover-trigger"][title="移出或删除"]`,
+      )?.focus({preventScroll:true})
+    })
   }
 
   function removeMember(word: Word): (() => void) | void {
     const index = draft.ids.indexOf(word.id)
     const restore = () => restoreLocalMember(word.id, index)
-    if (target.kind === 'isolated' || !target.id) {
+    if (target.kind === 'isolated' || !target.id || !sourceGroup?.wordIds.includes(word.id)) {
       setDraft(current => ({ ...current, ids: current.ids.filter(id => id !== word.id) }))
       setAnnounce(`已从本组暂存移除「${word.text}」，保存前尚未写入。`)
       return restore
     }
-    const sourceKind = target.kind
-    const sourceId = target.id
-    const undo = managementTransaction(transactionDraft => {
-      if (sourceKind === 'shape') {
-        const group = transactionDraft.groups[sourceId]
-        if (!group) throw new Error('形近组已不存在，请关闭后重试')
-        group.wordIds = group.wordIds.filter(id => id !== word.id)
-      } else if (sourceKind === 'synonym') {
-        const group = transactionDraft.synonymSets[sourceId]
-        if (!group) throw new Error('近义组已不存在，请关闭后重试')
-        group.wordIds = group.wordIds.filter(id => id !== word.id)
-      } else {
-        transactionDraft.customSets ??= {}
-        const group = transactionDraft.customSets[sourceId]
-        if (!group) throw new Error('自定义组已不存在，请关闭后重试')
-        group.wordIds = group.wordIds.filter(id => id !== word.id)
-      }
-    })
-    ownMembershipChange.current = true
+    const source: GroupRef = {kind: target.kind, id: target.id}
+    const undo = managementTransaction(transactionDraft => removeGroupMember(transactionDraft, source, word.id))
+    setOwnMembershipChange(true)
     setBaseline(current=>({...current,ids:current.ids.filter(id=>id!==word.id)}))
     setDraft(current => ({ ...current, ids: current.ids.filter(id => id !== word.id) }))
     setAnnounce(`已把「${word.text}」移出本组，可在提示中撤销。`)
@@ -636,7 +654,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
     const index = draft.ids.indexOf(word.id)
     const closing = (target.kind === 'isolated' && target.id === word.id) || draft.ids.length <= 1
     const undo = deleteManaged('word', word.id)
-    ownMembershipChange.current = true
+    setOwnMembershipChange(true)
     setBaseline(current=>({...current,ids:current.ids.filter(id=>id!==word.id)}))
     if (closing) {
       onClose()
@@ -663,18 +681,21 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
 
   const kindHint = kindChanged
     ? `保存后会把本组转换为${KIND_META[draft.kind].label}。成员、学习记录和你的笔记都会保留。`
-    : initialGroup?.pendingTypeChoice
-      ? '这组由合并产生，类型尚未确定。选择一种类型并保存即可确定。'
-      : target.kind === 'isolated'
-        ? '选择一种关系类型，再添加至少一个单词，保存后即可成组。'
-        : null
+    : target.kind === 'isolated'
+      ? '选择一种关系类型，再添加至少一个单词，保存后即可成组。'
+      : null
 
   return (
     <>
       <Dialog open onOpenChange={open => { if (!open) requestClose() }}>
-        <DialogContent onCloseAutoFocus={onCloseAutoFocus} onInteractOutside={event=>{if((event.target as HTMLElement)?.closest?.('[data-sonner-toast]'))event.preventDefault()}} className="management-editor-dialog flex max-h-[92vh] w-full max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent onCloseAutoFocus={onCloseAutoFocus} onOpenAutoFocus={event => {
+          // Opening must not put a caret in the name field; new groups start at the member search.
+          event.preventDefault()
+          if (!target.id && addSearch.current) addSearch.current.focus()
+          else titleRef.current?.focus({ preventScroll: true })
+        }} onInteractOutside={event=>{if((event.target as HTMLElement)?.closest?.('[data-sonner-toast]'))event.preventDefault()}} className="management-editor-dialog flex max-h-[92vh] w-full max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="border-b px-5 pb-4 pr-12 pt-5 sm:pl-6 sm:pr-12">
-            <DialogTitle className="min-w-0 break-words font-word text-2xl font-medium">{headerTitle}</DialogTitle>
+            <DialogTitle ref={titleRef} tabIndex={-1} className="min-w-0 break-words font-word text-2xl font-medium outline-none">{headerTitle}</DialogTitle>
             <DialogDescription className="leading-6">
               编辑词条、熟练度和分组。完成后保存修改。
             </DialogDescription>
@@ -699,7 +720,8 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                   <Input
                     value={draft.name}
                     onChange={event => setDraft(current => ({ ...current, name: event.target.value }))}
-                    placeholder={initialGroup ? safeGroupTitle(state, { kind: target.kind as GroupKind, id: target.id! }) : '例如：容易混淆的 -ceive 词族'}
+                    className="font-normal"
+                    placeholder={initialGroup ? safeGroupTitle(state, { kind: target.kind as GroupKind, id: target.id! }).replace(KIND_PREFIX, '') + '（自动）' : '例如：容易混淆的 -ceive 词族'}
                     disabled={sourceMissing}
                   />
                 </label>
@@ -709,6 +731,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                     value={draft.notes}
                     onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))}
                     placeholder="只记录你自己的辨析、搭配或记忆提示"
+                    className="font-normal"
                     rows={2}
                     disabled={sourceMissing}
                   />
@@ -728,7 +751,6 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                         aria-checked={active}
                         disabled={sourceMissing}
                         onClick={() => {
-                          setKindTouched(true)
                           setDraft(current => ({ ...current, kind }))
                           setAnnounce(`类型将保存为${KIND_META[kind].label}`)
                         }}
@@ -751,9 +773,12 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
               <div className="flex flex-wrap items-center gap-3 px-3 py-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-semibold">成员 · {selectedWords.length} 个单词</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">长按手柄拖动排序，也可聚焦手柄后使用上下方向键。</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">拖动左侧手柄排序，也可聚焦手柄后使用上下方向键。</p>
                 </div>
-                <Button type="button" size="sm" variant={addOpen ? 'secondary' : 'outline'} onClick={() => setAddOpen(open => !open)} disabled={sourceMissing} aria-expanded={addOpen}>
+                <Button type="button" size="sm" variant={addOpen ? 'secondary' : 'outline'} onClick={() => {
+                  setAddOpen(open => !open)
+                  if (!addOpen) requestAnimationFrame(() => addSearch.current?.focus({ preventScroll: true }))
+                }} disabled={sourceMissing} aria-expanded={addOpen}>
                   <Plus />{addOpen ? '收起添加' : '添加成员'}
                 </Button>
               </div>
@@ -763,11 +788,18 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
+                      ref={addSearch}
                       value={query}
                       onChange={event => setQuery(event.target.value)}
-                      placeholder="搜索英文、音标或释义…"
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' && !event.nativeEvent.isComposing && query.trim() && candidates[0]) {
+                          event.preventDefault()
+                          addMember(candidates[0])
+                        }
+                      }}
+                      placeholder="搜索英文、音标或释义，回车添加第一项…"
                       aria-label="搜索可添加的单词"
-                      className="min-w-0 pl-8"
+                      className="min-w-0 pl-8 font-normal"
                     />
                   </div>
                   <div className="max-h-56 overflow-y-auto rounded-lg border bg-background">
@@ -781,6 +813,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                               <span className="min-w-0 truncate font-word text-base">{word.text}</span>
                               {word.phonetic && <span className="min-w-0 truncate text-[11px] text-muted-foreground">{word.phonetic}</span>}
+                              {similar.has(word.id) && <span className="rounded border border-blue-300/70 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 dark:border-blue-800 dark:text-blue-200">拼写相近</span>}
                               {memberships.length === 0
                                 ? <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', ISOLATED_BADGE)}>独立单词</span>
                                 : memberships.map(kind => <span key={kind} className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', KIND_META[kind].badge)}>{KIND_META[kind].label}</span>)}
@@ -794,7 +827,10 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                       )
                     })}
                   </div>
-                  <p className="text-[11px] leading-5 text-muted-foreground">加入其他组的词后，保存时会从原同类组移出；单词与学习记录保留。</p>
+                  {candidateTotal > CANDIDATE_LIMIT && <p className="text-[11px] leading-5 text-muted-foreground">另有 {candidateTotal - CANDIDATE_LIMIT} 个单词未列出，输入关键词可缩小范围。</p>}
+                  <p className="text-[11px] leading-5 text-muted-foreground">{draft.kind === 'synonym'
+                    ? '同一个词可以加入多个近义组。'
+                    : `已有${KIND_META[draft.kind].label}的词会在保存后转到这里。`}</p>
                 </div>
               )}
 
@@ -832,8 +868,8 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                           className="management-grip mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                           draggable
                           data-armed={armedId === word.id ? 'true' : 'false'}
-                          aria-label={`长按拖动「${word.text}」排序，或按上下方向键调整`}
-                          title="长按拖动；方向键也可排序"
+                          aria-label={`拖动「${word.text}」排序，或按上下方向键调整`}
+                          title="拖动排序；方向键也可排序"
                           onPointerDown={event => {
                             if (event.button !== 0) return
                             startPress(word, event.pointerType || 'mouse')
@@ -891,7 +927,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
                       </div>
 
                       {expanded && (
-                        <div id={`word-fields-${word.id}`} className="grid min-w-0 gap-3 border-t bg-muted/20 p-3 sm:grid-cols-2 sm:p-4">
+                        <div id={`word-fields-${word.id}`} className="management-word-fields grid min-w-0 gap-3 border-t bg-muted/20 p-3 sm:grid-cols-2 sm:p-4">
                           <label className="grid min-w-0 gap-1.5 text-xs font-medium sm:col-span-2">
                             中文释义
                             <Textarea aria-label={`编辑 ${word.text} 的中文释义`} value={editValue(word, 'gloss')} onChange={event => updateWordEdit(word, 'gloss', event.target.value)} rows={2} />
@@ -948,7 +984,7 @@ export default function ManagementEditor({ target, onClose, onCloseAutoFocus, fo
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <Button data-guide="editor-cancel" type="button" variant="outline" onClick={requestClose}>取消</Button>
-              <Button type="button" onClick={save} disabled={sourceMissing || draft.ids.length < 1 || (draft.ids.length===1 && target.kind!=='isolated' && !ownMembershipChange.current)}>
+              <Button type="button" onClick={save} disabled={sourceMissing || draft.ids.length < 1 || (draft.ids.length===1 && target.kind!=='isolated' && !ownMembershipChange)}>
                 {singleWorkspace?'保存词条':target.kind==='isolated'?'保存并成组':initialGroup?'保存修改':'创建关系组'}
               </Button>
             </div>

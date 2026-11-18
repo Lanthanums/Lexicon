@@ -5,7 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { initializeAppearance } from '@/lib/appearance'
 import { EMPTY, STORAGE_KEY } from '@/lib/libraryDefaults'
-import { normalizeState } from '@/lib/state'
+import { migrateLibrary, normalizeState } from '@/lib/state'
 
 initializeAppearance()
 
@@ -17,7 +17,7 @@ async function boot() {
     if (!raw) return
     try {
       const data = JSON.parse(raw)
-      const state = normalizeState(data, EMPTY)
+      const state = migrateLibrary(normalizeState(data, EMPTY))
       const at = Number.isSafeInteger(data.snapshotAt) && data.snapshotAt > 0 ? data.snapshotAt as number : 0
       return { state, at }
     } catch { /* keep the unreadable copy available for recovery */ }

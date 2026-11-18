@@ -52,3 +52,25 @@ test('backup rejects inherited keys and phantom relation members', () => {
 test('invalid relation archives are rejected without discarding data', () => {
   assert.throws(() => normalizeState({ ...legacy, relationArchive: {} }, defaults), /关系归档/)
 })
+
+test('opening a library clears automatic titles that an older editor stored as names', async () => {
+  const { migrateLibrary } = await import('../src/lib/state')
+  const word = (id: string) => ({ id, text: id, gloss: id, meanings: [], groupId: 'g', addedAt: 1, source: 'manual' as const })
+  const words = Object.fromEntries(['bustle', 'bristle', 'rustle', 'prop'].map(id => [id, word(id)]))
+  const state = migrateLibrary({
+    words, stats: {}, activity: {}, synonymSets: {},
+    groups: {
+      g: { id: 'g', name: 'bristle / bustle', wordIds: ['bustle', 'bristle', 'rustle'], manual: true, createdAt: 1 },
+      h: { id: 'h', name: 'pro- / prop- family', wordIds: ['prop'], manual: true, createdAt: 1 },
+    },
+    customSets: {
+      c: { id: 'c', name: '自定义组 · bustle / rustle …', nameSource: 'manual', notes: '', wordIds: ['bustle', 'rustle'], createdAt: 1 },
+      d: { id: 'd', name: 'my / own', nameSource: 'manual', notes: '', wordIds: ['bustle', 'rustle'], createdAt: 1 },
+    },
+    settings: { threshold: .7, dictProviders: [] }, learning: { enabled: false, addCount: 0, traces: [] },
+  })
+  assert.equal(state.groups.g.name, undefined)
+  assert.equal(state.groups.h.name, 'pro- / prop- family')
+  assert.deepEqual([state.customSets!.c.name, state.customSets!.c.nameSource], ['', 'auto'])
+  assert.equal(state.customSets!.d.name, 'my / own')
+})

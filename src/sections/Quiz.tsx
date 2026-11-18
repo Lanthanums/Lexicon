@@ -16,6 +16,7 @@ import {
   type SynonymEvaluation,
 } from '@/lib/quizRules'
 import ReviewCharts from '@/sections/ReviewCharts'
+import { GlossCompact, GlossPrompt } from '@/sections/QuizGloss'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -150,6 +151,7 @@ export default function Quiz({
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const spellRef = useRef<HTMLInputElement>(null)
+  const workspaceRef = useRef<HTMLDivElement>(null)
   const pendingRec = useRef<AnswerRec | null>(null)
   const synonymKeyRef = useRef('')
 
@@ -228,6 +230,29 @@ export default function Quiz({
   useEffect(() => {
     if (phase === 'running' && q?.mode === 'spell') spellRef.current?.focus()
   }, [phase, index, q])
+
+  // The option letters double as keyboard shortcuts (A–D or 1–4).
+  const choiceKey = useRef<(event: KeyboardEvent) => void>(() => {})
+  useEffect(() => {
+    choiceKey.current = (event: KeyboardEvent) => {
+      if (phase !== 'running' || !q?.options || feedback !== 'idle' || event.repeat ||
+          event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (!workspaceRef.current?.getClientRects().length || document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      const key = event.key.toLowerCase()
+      const position = /^[1-9]$/.test(key) ? Number(key) - 1 : /^[a-z]$/.test(key) ? key.charCodeAt(0) - 97 : -1
+      const option = q.options[position]
+      if (!option || q.options.length > 4) return
+      event.preventDefault()
+      answerChoice(option.id, option.label)
+    }
+  })
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => choiceKey.current(event)
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [])
 
   // Freeze question members. Any library edit invalidates the unanswered question.
   useEffect(() => {
@@ -931,12 +956,11 @@ export default function Quiz({
                     <SynonymReview answer={answer} />
                   ) : (
                     <>
-                      <p
-                        className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-muted-foreground"
-                        title={word ? meaningOf(word) : ''}
-                      >
-                        {word ? meaningOf(word) : '（该词已从词库删除）'}
-                      </p>
+                      {word ? (
+                        <GlossCompact gloss={meaningOf(word)} meanings={word.meanings} className="quiz-review-gloss" />
+                      ) : (
+                        <p className="mt-1.5 text-sm text-muted-foreground">（该词已从词库删除）</p>
+                      )}
                       {answer.skipped ? (
                         <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
                           题目内容在作答前已变动，本题不计分。
@@ -991,7 +1015,7 @@ export default function Quiz({
 
   if (isStale) {
     return (
-      <div className="study-workspace" aria-label="抽查练习">
+      <div ref={workspaceRef} className="study-workspace" aria-label="抽查练习">
         <div className="flex items-center gap-3">
           <Progress value={(index / questions.length) * 100} className="h-1.5 flex-1" />
           <span className="text-sm tabular-nums text-muted-foreground">
@@ -1021,9 +1045,27 @@ export default function Quiz({
     )
   }
 
+  const kindLabel = q.mode === 'spell' ? '主动回忆' : q.mode === 'synonym' ? '按词计分' : '再认练习'
+  const last = index + 1 >= questions.length
+  const nextLabel = last ? '查看本轮结果' : '下一题（Enter）'
+  const chosenOption = q.options?.find((option) => option.id === chosen)
+  // A wrong pick says what it actually was, which is the useful part for look-alikes.
+  const chosenWord = chosenOption ? state.words[chosenOption.id] : undefined
+  const chosenNote =
+    feedback === 'wrong' && chosenOption && chosenWord && chosenOption.label !== q.answer
+      ? q.mode === 'zh2en'
+        ? { word: chosenOption.label, gloss: meaningOf(chosenWord), meanings: chosenWord.meanings }
+        : { word: chosenWord.text, gloss: chosenOption.label, meanings: chosenWord.meanings }
+      : null
+  const instruction =
+    q.mode === 'zh2en' ? '选出对应的英文单词'
+      : q.mode === 'en2zh' ? '选出正确的中文释义'
+        : q.mode === 'spell' ? '拼出这个单词'
+          : '写出这个近义组里的英文单词，顺序不限'
+
   return (
-    <div className="study-workspace" aria-label="抽查练习">
-      <div className="flex items-center gap-3">
+    <div ref={workspaceRef} className="study-workspace" aria-label="抽查练习">
+      <div className="quiz-progress">
         <Progress
           value={((index + (feedback !== 'idle' ? 1 : 0)) / questions.length) * 100}
           className="h-1.5 flex-1"
@@ -1043,48 +1085,41 @@ export default function Quiz({
         }`}
       >
         <div className="quiz-prompt">
-          <p className="mb-5 text-xs tracking-widest text-muted-foreground">
-            第 {index + 1} 题 · 主动回忆
-          </p>
-          <div className="mb-1 flex items-center gap-2">
-            <Badge variant="outline" className="font-normal">
-              {BADGE_LABEL[q.mode]}
-            </Badge>
+          <div className="quiz-prompt-meta">
+            <span className="quiz-number">第 {index + 1} 题</span>
+            <Badge variant="outline" className="font-normal">{BADGE_LABEL[q.mode]}</Badge>
+            <span className="text-xs text-muted-foreground">{kindLabel}</span>
             {q.mode === 'synonym' ? (
-              <Badge variant="secondary" className="font-normal">
-                {membersForQuestion.length} 个成员
-              </Badge>
+              <Badge variant="secondary" className="ml-auto font-normal">{membersForQuestion.length} 个成员</Badge>
             ) : null}
           </div>
-
-          <p
-            className={`quiz-prompt-text mt-4 tracking-tight ${
-              q.mode === 'en2zh' ? 'font-word' : 'font-medium'
-            }`}
-          >
-            {q.prompt}
-          </p>
-          {q.mode === 'synonym' ? (
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              写出你记得的英文单词，顺序不限。
-            </p>
-          ) : q.sub ? (
-            <p className="mt-2 text-sm text-muted-foreground">{q.sub}</p>
-          ) : null}
+          {q.mode === 'en2zh' ? (
+            <div className="quiz-prompt-text quiz-prompt-word">
+              <p className="font-word">{q.prompt}</p>
+              {q.sub ? <p className="quiz-prompt-phonetic">{q.sub}</p> : null}
+            </div>
+          ) : q.mode === 'synonym' ? (
+            <div className="quiz-prompt-text">
+              <p className="quiz-headline-lg">{q.prompt.replace(/^近义组\s*·\s*/, '')}</p>
+            </div>
+          ) : (
+            <GlossPrompt gloss={q.prompt} meanings={liveWord?.meanings} />
+          )}
         </div>
 
         <div className="quiz-response">
+          <div className="quiz-instruction">
+            <span>{instruction}</span>
+            {q.mode === 'synonym' ? (
+              <span className="tabular-nums">已填 {filledSynonym}/{membersForQuestion.length} · 需写对 {synonymRequired}</span>
+            ) : q.options && q.options.length <= 4 && feedback === 'idle' ? (
+              <span>可按 A–{String.fromCharCode(64 + q.options.length)} 或 1–{q.options.length} 作答</span>
+            ) : null}
+          </div>
+
           {q.mode === 'synonym' ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  填写英文成员 · 已填 {filledSynonym}/{membersForQuestion.length}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  本题需写对 {synonymRequired}/{membersForQuestion.length}
-                </p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-4">
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 {Array.from({ length: membersForQuestion.length }, (_, i) => (
                   <Input
                     key={i}
@@ -1104,7 +1139,7 @@ export default function Quiz({
                     }}
                     placeholder={`成员 ${i + 1}`}
                     aria-label={`近义组成员拼写 ${i + 1}`}
-                    className="font-word h-11"
+                    className="font-word h-11 text-lg"
                     autoCapitalize="off"
                     autoCorrect="off"
                     spellCheck={false}
@@ -1114,9 +1149,9 @@ export default function Quiz({
               </div>
 
               {feedback === 'idle' ? (
-                <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <Button
-                    className={`pressable h-11 w-full sm:w-auto ${
+                    className={`pressable h-11 ${
                       allSynonymFilled ? '' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}
                     variant={allSynonymFilled ? 'default' : 'secondary'}
@@ -1124,18 +1159,14 @@ export default function Quiz({
                   >
                     {allSynonymFilled ? '提交答案' : '提交（还有空未填）'}
                   </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs leading-5 text-muted-foreground">
                     {allSynonymFilled
                       ? '提交后逐词显示写对、漏写与错写。'
                       : '还有空未填时按钮不高亮，但仍可点击；会先弹窗确认是否提前提交。'}
                   </p>
                 </div>
               ) : synonymEval ? (
-                <SynonymFeedback
-                  evaluation={synonymEval}
-                  onNext={nextNow}
-                  last={index + 1 >= questions.length}
-                />
+                <SynonymFeedback evaluation={synonymEval} onNext={nextNow} last={last} />
               ) : null}
             </div>
           ) : q.mode === 'spell' ? (
@@ -1146,11 +1177,15 @@ export default function Quiz({
                   value={spellInput}
                   onChange={(event) => setSpellInput(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key !== 'Enter') return
+                    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                    // Without this the same Enter reaches the "next" button that takes focus
+                    // after a wrong answer, and the correction is skipped.
+                    event.preventDefault()
                     if (feedback === 'idle') answerSpell()
                     else if (feedback === 'wrong') nextNow()
                   }}
                   placeholder={feedback === 'wrong' ? '本题已提交…' : '拼出这个单词…'}
+                  aria-label="拼写答案"
                   className={`font-word h-12 text-xl tracking-wide ${
                     feedback === 'correct'
                       ? 'border-emerald-600 bg-emerald-600/10'
@@ -1164,40 +1199,41 @@ export default function Quiz({
                   spellCheck={false}
                 />
                 {feedback === 'idle' ? (
-                  <Button
-                    className="pressable h-12 px-5"
-                    onClick={answerSpell}
-                    disabled={!spellInput.trim()}
-                  >
+                  <Button className="pressable h-12 px-6" onClick={answerSpell} disabled={!spellInput.trim()}>
                     确定
                   </Button>
                 ) : null}
               </div>
 
               {feedback === 'idle' && hintView ? (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="pressable"
-                    onClick={() => setHint((current) => nextSpellHint(current))}
-                    disabled={hint >= SPELL_HINT_LIMIT}
-                  >
-                    {hint === 0
-                      ? '提示：首字母'
-                      : hint === 1
-                        ? '提示：音标'
-                        : hint === 2
-                          ? '提示：完整单词'
-                          : '已显示完整单词'}
-                  </Button>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    提示 {hint}/{SPELL_HINT_LIMIT} · 提示后不提升掌握度；查看完整词后安排巩固
-                  </span>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="pressable"
+                      onClick={() => setHint((current) => nextSpellHint(current))}
+                      disabled={hint >= SPELL_HINT_LIMIT}
+                    >
+                      {hint === 0
+                        ? '提示：首字母'
+                        : hint === 1
+                          ? '提示：音标'
+                          : hint === 2
+                            ? '提示：完整单词'
+                            : '已显示完整单词'}
+                    </Button>
+                    <span
+                      className="text-xs tabular-nums text-muted-foreground"
+                      title="使用提示后，本题不提升掌握度；查看完整单词后会安排巩固。"
+                    >
+                      提示 {hint}/{SPELL_HINT_LIMIT} · 使用提示后本题不提升掌握度
+                    </span>
+                  </div>
                   {hintView.text ? (
                     <p
-                      className={`basis-full rounded-lg bg-background px-3 py-2 text-sm ${
-                        hintView.revealed ? 'font-word text-foreground' : 'text-muted-foreground'
+                      className={`rounded-lg border bg-background px-3 py-2 text-sm ${
+                        hintView.revealed ? 'font-word text-base text-foreground' : 'text-muted-foreground'
                       }`}
                     >
                       {hintView.text}
@@ -1207,70 +1243,77 @@ export default function Quiz({
               ) : null}
 
               {feedback === 'wrong' ? (
-                <div className="space-y-2 text-sm">
-                  <p>
-                    正确拼写：
-                    <span className="font-word ml-1 text-lg font-medium text-emerald-700 dark:text-emerald-300">
-                      {q.answer}
-                    </span>
-                  </p>
-                  {spellWrong ? (
-                    <p className="text-xs text-muted-foreground">
-                      你的拼写：
-                      <span className="line-through">{spellWrong}</span>
+                <div className="quiz-feedback" data-tone="wrong">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">正确拼写：</span>
+                      <span className="font-word ml-1 text-xl font-medium text-emerald-700 dark:text-emerald-300">
+                        {q.answer}
+                      </span>
                     </p>
-                  ) : null}
-                  <Button autoFocus className="pressable h-11" onClick={nextNow}>
-                    {index + 1 >= questions.length ? '查看本轮结果' : '下一题（Enter）'}
+                    {spellWrong ? (
+                      <p className="text-xs text-muted-foreground">
+                        你的拼写：<span className="font-word text-sm line-through decoration-destructive/70">{spellWrong}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button autoFocus className="pressable h-11 shrink-0" onClick={nextNow}>
+                    {nextLabel}
                   </Button>
                 </div>
               ) : null}
             </div>
           ) : (
-            <div className="quiz-options">
-              <p className="col-span-full mb-1 text-xs font-medium text-muted-foreground">选择一个答案</p>
-              {q.options?.map((option, i) => {
-                const isAnswer = option.label === q.answer
-                const isChosen = chosen === option.id
-                let cls = 'border bg-background hover:bg-accent hover:border-primary/40'
-                if (feedback !== 'idle') {
-                  if (isAnswer) {
-                    cls = 'border-emerald-600 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
-                  } else if (isChosen) {
-                    cls = 'border-destructive bg-destructive/10 text-destructive'
-                  } else {
-                    cls = 'border bg-background opacity-50'
-                  }
-                }
-                return (
-                  <button
-                    key={option.id}
-                    disabled={feedback !== 'idle'}
-                    onClick={() => answerChoice(option.id, option.label)}
-                    className={`quiz-option pressable option-in rounded-xl px-4 py-4 text-left transition-colors duration-150 ${cls} ${
-                      q.mode === 'zh2en' ? 'font-word text-xl' : 'text-base'
-                    }`}
-                    style={{ transitionDelay: `${i * 55}ms` }}
-                  >
-                    <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-xs text-muted-foreground">
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <span className="min-w-0">{option.label}</span>
-                  </button>
-                )
-              })}
+            <>
+              <div className="quiz-options" data-kind={q.mode}>
+                {q.options?.map((option, i) => {
+                  const isAnswer = option.label === q.answer
+                  const isChosen = chosen === option.id
+                  const optionState = feedback === 'idle' ? 'idle' : isAnswer ? 'answer' : isChosen ? 'chosen' : 'muted'
+                  return (
+                    <button
+                      key={option.id}
+                      disabled={feedback !== 'idle'}
+                      onClick={() => answerChoice(option.id, option.label)}
+                      data-state={optionState}
+                      className="quiz-option pressable option-in"
+                      style={{ transitionDelay: `${i * 55}ms` }}
+                    >
+                      <span className="quiz-option-key">{String.fromCharCode(65 + i)}</span>
+                      {q.mode === 'en2zh' ? (
+                        <GlossCompact gloss={option.label} meanings={state.words[option.id]?.meanings} className="quiz-option-gloss" />
+                      ) : (
+                        <span className="font-word min-w-0 text-xl">{option.label}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
               {feedback === 'wrong' ? (
-                <div className="col-span-full space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    正确答案：
-                    <span className="font-word text-foreground">{q.answer}</span>
-                  </p>
-                  <Button autoFocus className="pressable h-11" onClick={nextNow}>
-                    {index + 1 >= questions.length ? '查看本轮结果' : '下一题（Enter）'}
+                <div className="quiz-feedback" data-tone="wrong">
+                  <div className="min-w-0 space-y-1.5">
+                    {q.mode === 'zh2en' ? (
+                      <p className="text-sm">
+                        <span className="text-muted-foreground">正确答案：</span>
+                        <span className="font-word ml-1 text-xl font-medium text-emerald-700 dark:text-emerald-300">{q.answer}</span>
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">正确释义已用绿色标出。</p>
+                    )}
+                    {chosenNote ? (
+                      <p className="quiz-feedback-note text-xs leading-5 text-muted-foreground">
+                        你选的 <span className="font-word text-sm text-foreground">{chosenNote.word}</span>
+                        {q.mode === 'zh2en' ? ' 意思是：' : ' 的释义：'}
+                        <GlossCompact gloss={chosenNote.gloss} meanings={chosenNote.meanings} className="quiz-feedback-gloss" />
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button autoFocus className="pressable h-11 shrink-0" onClick={nextNow}>
+                    {nextLabel}
                   </Button>
                 </div>
               ) : null}
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -1323,10 +1366,10 @@ function SynonymFeedback({
   last: boolean
 }) {
   return (
-    <div className="space-y-2 border-t pt-3 text-sm">
+    <div className="quiz-feedback quiz-feedback-stack" data-tone={evaluation.passed ? 'right' : 'wrong'}>
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={`font-medium ${
+          className={`text-sm font-medium ${
             evaluation.passed ? 'text-emerald-700 dark:text-emerald-300' : 'text-destructive'
           }`}
         >
@@ -1336,9 +1379,9 @@ function SynonymFeedback({
           写对 {evaluation.correct}/{evaluation.total} · 需 ≥ {evaluation.required}
         </span>
       </div>
-      <ul className="space-y-1">
+      <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
         {evaluation.entries.map((entry) => (
-          <li key={entry.wordId} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+          <li key={entry.wordId} className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
             <span
               className={`inline-block min-w-8 ${
                 entry.verdict === 'correct'
@@ -1373,9 +1416,11 @@ function SynonymFeedback({
           未能对应到成员：{evaluation.extraWrong.join('、')}
         </p>
       ) : null}
-      <Button autoFocus className="pressable h-11" onClick={onNext}>
-        {last ? '查看本轮结果' : '下一题'}
-      </Button>
+      <div className="flex justify-end">
+        <Button autoFocus className="pressable h-11" onClick={onNext}>
+          {last ? '查看本轮结果' : '下一题'}
+        </Button>
+      </div>
     </div>
   )
 }

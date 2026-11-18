@@ -10,11 +10,11 @@ test('batch parser accepts semicolons, normalizes and deduplicates, and keeps in
 })
 test('staged batch entries can group with an earlier word from the same batch and commit exact counts',()=>{
   const s=blank(),plan={shape:[],near:[],nearStatus:'未找到近义关系'}
-  insertPlanned(s,{text:'effluent',gloss:'流出的',meanings:[],source:'manual'},plan,'','','a',100,'2026-10-29')
-  insertPlanned(s,{text:'affluent',gloss:'富裕的',meanings:[],source:'manual'},plan,'single-a','','b',101,'2026-10-29')
+  insertPlanned(s,{text:'effluent',gloss:'流出的',meanings:[],source:'manual'},plan,'','a',100,'2026-10-29')
+  insertPlanned(s,{text:'affluent',gloss:'富裕的',meanings:[],source:'manual'},plan,'single-a','b',101,'2026-10-29')
   assert.deepEqual(s.groups['single-a'].wordIds,['a','b'])
   assert.equal(s.activity['2026-10-29'].added,2);assert.equal(s.learning.addCount,51)
-  const duplicate=insertPlanned(s,{text:'affluent',gloss:'保留原义',meanings:[],source:'manual'},plan,'','','c',102,'2026-10-29')
+  const duplicate=insertPlanned(s,{text:'affluent',gloss:'保留原义',meanings:[],source:'manual'},plan,'','c',102,'2026-10-29')
   assert.equal(duplicate.duplicate,true);assert.equal(s.words.b.gloss,'富裕的');assert.equal(s.activity['2026-10-29'].added,2)
 })
 test('new memory metadata round-trips and malformed memory plans reject the entire import',()=>{
@@ -37,8 +37,8 @@ test('pasted lines normalize fullwidth letters, apostrophes and spaces; huge ter
 test('an old spelling variant is detected without replacing its record', () => {
   const s = blank()
   const plan = { shape: [], near: [], nearStatus: '' }
-  insertPlanned(s, { text: 'CAN’T', gloss: '原义', meanings: [], source: 'manual' }, plan, '', '', 'old', 1, '2026-11-13')
-  const result = insertPlanned(s, { text: "can't", gloss: '新义', meanings: [], source: 'manual' }, plan, '', '', 'new', 2, '2026-11-13')
+  insertPlanned(s, { text: 'CAN’T', gloss: '原义', meanings: [], source: 'manual' }, plan, '', 'old', 1, '2026-11-13')
+  const result = insertPlanned(s, { text: "can't", gloss: '新义', meanings: [], source: 'manual' }, plan, '', 'new', 2, '2026-11-13')
   assert.equal(result.id, 'old')
   assert.equal(result.duplicate, true)
   assert.equal(s.words.old.gloss, '原义')

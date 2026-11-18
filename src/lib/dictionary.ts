@@ -563,6 +563,7 @@ async function lookupWithProviders(
   signal?: AbortSignal,
   providers?: DictProviderConfig[],
   accept: (result: LookupResult) => boolean = () => true,
+  onYoudaoFallback?: () => void,
 ): Promise<LookupResult> {
   const text = raw.trim().toLowerCase()
   if (!text) throw new WordNotFoundError(raw)
@@ -572,8 +573,13 @@ async function lookupWithProviders(
   let sawMiss = false
   let sawError = false
   let needsVerifiedBackup = false
+  let notifiedFallback = false
   for (const p of chain) {
     if (signal?.aborted) break
+    if (needsVerifiedBackup && !notifiedFallback && p.id !== 'youdao-web') {
+      notifiedFallback = true
+      onYoudaoFallback?.()
+    }
     // one retry for the fast primary provider — transient hiccups are common
     const attempts = p.id === 'youdao-web' ? 2 : 1
     for (let i = 0; i < attempts; i++) {
@@ -635,12 +641,13 @@ export async function lookupWord(
   raw: string,
   signal?: AbortSignal,
   providers?: DictProviderConfig[],
+  onYoudaoFallback?: () => void,
 ): Promise<LookupResult> {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   const key = JSON.stringify([raw.trim().toLowerCase(), providers])
   const cached = lookupCache.get(key)
   if (cached && Date.now() - cached.at < 86400000) return structuredClone(cached.result)
-  const result = await lookupWithProviders(raw, signal, providers)
+  const result = await lookupWithProviders(raw, signal, providers, undefined, onYoudaoFallback)
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   if (lookupCache.size >= 500) lookupCache.delete(lookupCache.keys().next().value!)
   lookupCache.set(key, { at: Date.now(), result })

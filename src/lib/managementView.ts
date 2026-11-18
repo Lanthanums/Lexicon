@@ -7,7 +7,7 @@ export type ManagementSort = 'newest' | 'oldest' | 'az' | 'za'
 
 export interface WordRelations {
   shapeId?: string
-  synonymId?: string
+  synonymIds: string[]
   customId?: string
   isolated: boolean
 }
@@ -32,7 +32,7 @@ function latestAddedAt(words: Word[]): number {
 
 export function deriveManagementView(state: LibraryState): ManagementView {
   const relations: Record<string, WordRelations> = Object.fromEntries(
-    Object.keys(state.words).map(id => [id, { isolated: true }]),
+    Object.keys(state.words).map(id => [id, { isolated: true, synonymIds: [] }]),
   )
   const cards: ManagementCard[] = []
   for (const group of Object.values(state.groups)) {
@@ -44,7 +44,10 @@ export function deriveManagementView(state: LibraryState): ManagementView {
   for (const group of Object.values(state.synonymSets)) {
     const words = group.wordIds.map(id => state.words[id]).filter((word): word is Word => !!word)
     if (words.length < 2) continue
-    words.forEach(word => { relations[word.id] = { ...relations[word.id], synonymId: group.id, isolated: false } })
+    words.forEach(word => {
+      relations[word.id].synonymIds.push(group.id)
+      relations[word.id].isolated = false
+    })
     cards.push({ id: group.id, kind: 'synonym', name: groupTitle(state,{kind:'synonym',id:group.id}), notes: userNotes(group.notes), words, latestAddedAt: latestAddedAt(words) })
   }
   for (const group of Object.values(state.customSets ?? {})) {

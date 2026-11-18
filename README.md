@@ -27,18 +27,18 @@ The first-run guide introduces all four areas and offers four short exercises fo
 
 ## Organise words and relationships
 
-Blue cards are spelling groups, green cards are synonym groups, grey cards are custom groups and yellow cards are isolated words. Each word can belong to one group of each type at the same time; it is isolated when it belongs to none. Automatic matching is editable, and lexical relationships still need context when choosing an interchangeable word.
+Blue cards are spelling groups, green cards are synonym groups, grey cards are custom groups and yellow cards are isolated words. A word can appear in several synonym groups for different senses, alongside up to one spelling group and one custom group. When you add a word, Lexicon joins the matching synonym groups automatically and shows the result in a notification. You can adjust memberships in the group editor.
 
 Cards show words, phonetics, one-line collapsible definitions and five mastery dots. The pencil opens a unified editor for names, notes, type, members, order and word details. Expand a member to edit definitions, phonetics, usage and examples. The list view shows each word once with its memberships and sorting controls. Both views paginate large libraries. Search by spelling, definition or group name and jump to the result. The input and toolbar stay visible over a softly blurred background while you scroll.
 
 | Less obvious interaction | Result |
 | --- | --- |
-| Drag a word onto another card | Move only that word into the destination relationship. |
-| Drag a card from outside its word areas | Merge the whole card. Same types retain their type; mixed types default to a custom group with an explicit type choice. |
+| Drag a word onto another card | Release in the spelling, synonym or custom zone to join or create a group. |
+| Drag a card from outside its word areas | Take the whole group and choose the result type on the destination card. |
 | Hold the three-line grip in the editor, then drag | Reorder members. Focus the grip and use the up/down keys as an alternative. |
 | Click the five mastery dots in the editor | Open a 0–5 slider. Changes take effect when you save; manual adjustments do not add practice counts. |
 
-Moving a member preserves its other relationship types. An unresolved merge type remains available across restarts until you explicitly choose it. Undo can restore prior membership and order. Recalculating automatic spelling groups runs in the background and preserves manually curated groups.
+The preview shows which groups will be kept or replaced. Changes save on release. Use Undo to restore them, or open the pencil editor to change a group's type. See the [drag-and-drop rules](docs/DRAG_GROUPING.md). Recalculating automatic spelling groups runs in the background and preserves manually curated groups.
 
 The editor distinguishes **removing from a group**, **deleting a word everywhere** and **dissolving a group**. Removing or dissolving preserves the words and their learning history; deleting a word removes its relationships and history. Named or annotated groups that dissolve are recorded in the exportable relation archive. Confirmations and undo help you review these actions, and closing an editor with unsaved changes asks before discarding them.
 
@@ -54,9 +54,9 @@ Scheduling uses a transparent heuristic exponential model. It is not trained FSR
 
 Your library stays on your device. Desktop snapshots and pre-import recovery copies can use disk storage when browser storage runs out. Startup chooses the newest readable saved copy. JSON imports require confirmation, and desktop snapshots support up to 32 MiB. An existing installation can open its library after upgrading.
 
-- Export a backup before switching versions. JSON includes word IDs, definitions, learning history, custom groups, member order and unresolved merge choices. Export relation history in Settings or find it in the backup’s `relationArchive` field.
+- Export a backup before switching versions. JSON includes word IDs, definitions, learning history, custom groups and member order. Export relation history in Settings or find it in the backup’s `relationArchive` field.
 - Dictionary and synonym credentials are stored locally and may be included in exported backups. Check a backup before sharing it.
-- Offline synonym candidates use the bundled **Open English WordNet 2025** index, including direct links between related adjective senses. Optional API verification uses Datamuse; definition lookups use the configured dictionary services. These requests need a network connection. No on-device model is installed or trained.
+- Offline synonym candidates use the bundled **Open English WordNet 2025** index, including direct links between related adjective senses. Optional API verification uses Datamuse; it is requested only when the library already holds an offline candidate, runs in parallel for a batch, and skips the rest of the batch once the service fails. Definition lookups use the configured dictionary services. These requests need a network connection. No on-device model is installed or trained.
 - Public dictionary data is separate from your personal library. Dataset and dependency licences remain in [Third-party notices](docs/THIRD_PARTY_NOTICES.md).
 
 ## Build and run

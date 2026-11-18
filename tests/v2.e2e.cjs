@@ -12,22 +12,39 @@ async function undo(text){const front=page.locator('[data-sonner-toast][data-fro
 const fixture={words:{},groups:{},synonymSets:{stories:{id:'stories',name:'（尤指《圣经》中耶稣所讲的）（道德或宗教）寓言 · 近义词',notes:'来源：Open English WordNet 2025 · sample\n义项：a short moral story\nDatamuse 词形关系支持。',wordIds:['fable','parable','apologue'],createdAt:20},peace:{id:'peace',name:'平静与安宁',notes:'比较使用场景',wordIds:['calm','serene','tranquil'],createdAt:19}},stats:{}}
 const defs={adapt:'适应；调整以适合新的环境',adopt:'采用；收养',adept:'熟练的；内行',lark:'云雀；嬉闹',lurk:'潜伏；埋伏',lard:'猪油',fable:'寓言；传说；虚构的故事；用小故事表达生活经验和教训。'.repeat(6),parable:'（尤指《圣经》中耶稣所讲的）（道德或宗教）寓言',apologue:'寓言；讽喻故事',calm:'平静的；使镇静',serene:'安宁的；平和的',tranquil:'宁静的；安定的',apple:'苹果',orange:'柑橘',pupil:'学生；瞳孔'}
 for(const [i,text] of Object.keys(defs).entries()){const groupId=['adapt','adopt','adept'].includes(text)?'shape-a':['lark','lurk','lard'].includes(text)?'shape-b':text;fixture.words[text]={id:text,text,gloss:defs[text],phonetic:text==='parable'?'/ˈpærəbəl/':undefined,meanings:[{pos:text==='parable'?'n.':'',en:'meaning of '+text,zh:defs[text]}],source:'manual',groupId,addedAt:i+1};fixture.groups[groupId]??={id:groupId,wordIds:[],manual:false,createdAt:i+1};fixture.groups[groupId].wordIds.push(text);fixture.stats[text]={level:i%6,correct:3,wrong:0,lastSeen:Date.now()-86400000,dueAt:Date.now()+86400000}}
-async function reset(){await nav('设置与备份');await page.locator('input[type=file]').setInputFiles({name:'synthetic-v2.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});await page.getByRole('alertdialog').getByRole('button',{name:'确认导入',exact:true}).click();await state();await nav('录入与管理词汇');await page.getByRole('button',{name:'瀑布流视图',exact:true}).click()}
-async function safeDrag(source,target,sp,tp){
+async function reset(data=fixture){await nav('设置与备份');await page.locator('input[type=file]').setInputFiles({name:'synthetic-v2.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});await page.getByRole('alertdialog').getByRole('button',{name:'确认导入',exact:true}).click();await state();await nav('录入与管理词汇');await page.getByRole('button',{name:'瀑布流视图',exact:true}).click()}
+async function safeDrag(source,target,sp,kind,inspect){
  // Pin the controls first, then keep both grab points below them. Native
  // auto-scroll otherwise scrolls a whole card behind the sticky controls.
  await page.evaluate(()=>window.scrollTo(0,300));await page.waitForTimeout(320)
  const a=await source.boundingBox(),b=await target.boundingBox(),h=await page.locator('.management-sticky').evaluate(el=>el.getBoundingClientRect().height),scroll=await page.evaluate(()=>scrollY)
- await page.evaluate(y=>window.scrollTo(0,y),Math.max(0,Math.min(a.y+sp.y,b.y+tp.y)+scroll-h-70));await page.waitForTimeout(320)
+ const targetY=Math.min(60,b.height/2)
+ await page.evaluate(y=>window.scrollTo(0,y),Math.max(0,Math.min(a.y+sp.y,b.y+targetY)+scroll-h-70));await page.waitForTimeout(320)
  const box=await source.boundingBox();assert.ok(await page.evaluate(({x,y})=>!!document.elementFromPoint(x,y)?.closest('[data-card-id],[data-drag-word]'),{x:box.x+sp.x,y:box.y+sp.y}),'drag starts on visible content below pinned controls')
- await source.dragTo(target,{sourcePosition:sp,targetPosition:tp});await state()
+ const dest=await target.boundingBox(),sx=box.x+sp.x,sy=box.y+sp.y,ty=dest.y+targetY
+ const move=async fraction=>{
+  const x=dest.x+dest.width*fraction
+  await page.mouse.move(x,ty)
+  await page.mouse.move(x+1,ty)
+ }
+ await page.mouse.move(sx,sy)
+ await page.mouse.down()
+ try {
+  await page.mouse.move(sx+12,sy,{steps:3})
+  await move(kind==='custom' ? .88 : .12)
+  if(kind==='synonym')await move(.60)
+  await target.locator(`[data-drop-overlay][data-active-kind="${kind}"]`).waitFor({timeout:5000})
+  await inspect?.({move, dest, ty})
+ } finally { await page.mouse.up() }
+ await page.locator('[data-drop-overlay]').waitFor({state:'detached'})
+ await state()
 }
-async function dragCard(source,target){await safeDrag(card(source),card(target),{x:30,y:60},{x:30,y:60})}
-async function dragWord(word,target){await safeDrag(page.locator(`[data-drag-word="${word}"]`).first(),card(target),{x:25,y:15},{x:30,y:60})}
+async function dragCard(source,target,kind='shape',inspect){await safeDrag(card(source),card(target),{x:30,y:8},kind,inspect)}
+async function dragWord(word,target,kind='shape',inspect){await safeDrag(page.locator(`[data-drag-word="${word}"]`).first(),card(target),{x:25,y:15},kind,inspect)}
 ;(async()=>{
  await fs.mkdir(out,{recursive:true});app=await electron.launch({executablePath:process.env.LEXICON_EXE||undefined,args:process.env.LEXICON_EXE?[]:[root],env:{...process.env,LEXICON_TEST_DATA:path.join(out,'v2-profile-'+Date.now())}})
  page=await app.firstWindow();page.on('pageerror',e=>report.errors.push(e.message));await page.locator('nav[aria-label=主导航]').waitFor();await page.evaluate(()=>localStorage.setItem('lexicon-guide-v3','complete'));await page.reload();await page.setViewportSize({width:1920,height:1100});await reset()
- assert.equal(await page.locator('[data-card-kind=custom]').count(),0);assert.equal(await card('stories').getByRole('heading').textContent(),'近义组 · 寓言');assert.equal((await state()).words.parable.gloss,defs.parable)
+ assert.equal(await page.locator('[data-card-kind=custom]').count(),0);assert.equal(await card('stories').getByRole('heading').textContent(),'寓言');assert.equal((await state()).words.parable.gloss,defs.parable)
  assert.equal(await card('stories').getByText(/来源：Open English/).count(),0);assert.equal(await card('stories').locator('[data-management-word]').getByText('近义组',{exact:true}).count(),0)
  for(const id of ['shape-a','stories']){assert.equal(await card(id).getByRole('combobox').count(),0);assert.equal(await card(id).getByRole('button',{name:/删除|归组|移出/}).count(),0);assert.ok(await card(id).getByRole('img',{name:/熟练度/}).count()>0)}
  assert.equal(await page.getByRole('button',{name:'自定义组',exact:true}).count(),1)
@@ -45,14 +62,25 @@ async function dragWord(word,target){await safeDrag(page.locator(`[data-drag-wor
  await page.getByRole('button',{name:'瀑布流视图',exact:true}).click();await card('pupil').getByRole('button',{name:'编辑 pupil',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await dialog.getByRole('button',{name:'添加成员',exact:true}).click();await dialog.getByRole('button',{name:'添加 orange',exact:true}).click();await dialog.getByRole('radio',{name:/形近组/}).click();await dialog.getByRole('button',{name:'保存并成组',exact:true}).click();await dialog.waitFor({state:'hidden'});s=await state();assert.equal(s.words.pupil.groupId,s.words.orange.groupId);assert.equal(s.groups[s.words.pupil.groupId].wordIds.length,2)
  report.checks.push('Direct isolated-word editor adds another isolated word and forms the chosen group without a preliminary empty group')
 
- await reset();await dragWord('adapt','shape-b');s=await state();assert.deepEqual(s.groups['shape-a'].wordIds,['adopt','adept']);assert.equal(s.groups['shape-b'].wordIds.length,4);assert.equal(s.words.adapt.groupId,'shape-b');await undo('已合并词汇');assert.deepEqual((await state()).groups['shape-a'].wordIds,fixture.groups['shape-a'].wordIds)
- await dragCard('shape-a','shape-b');s=await state();assert.ok(!s.groups['shape-a']);assert.equal(s.groups['shape-b'].wordIds.length,6);await undo('已合并词汇');report.checks.push('Real mouse word drag moves only that member; card-header drag merges whole same-type cards; undo restores original order and memberships')
+ await reset();await dragWord('adapt','shape-b');s=await state();assert.deepEqual(s.groups['shape-a'].wordIds,['adopt','adept']);assert.equal(s.groups['shape-b'].wordIds.length,4);assert.equal(s.words.adapt.groupId,'shape-b')
+ await card('shape-b').getByText('可用右上角的编辑按钮修改类型',{exact:true}).waitFor()
+ await undo('已加入形近组');assert.deepEqual((await state()).groups['shape-a'].wordIds,fixture.groups['shape-a'].wordIds)
+ await dragCard('shape-a','shape-b');s=await state();assert.ok(!s.groups['shape-a']);assert.equal(s.groups['shape-b'].wordIds.length,6);await undo('已合并为形近组');report.checks.push('Real mouse word drag moves only that member; card-header drag merges whole same-type cards; undo restores original order and memberships')
 
- await reset();await dragWord('orange','shape-a');s=await state();assert.equal(s.words.orange.groupId,'shape-a');assert.equal(s.groups['shape-a'].wordIds.length,4);assert.equal(Object.keys(s.customSets).length,0);await undo('已合并词汇')
- await dragCard('orange','pupil');s=await state();let provisional=Object.values(s.customSets).find(g=>g.wordIds.includes('orange'));assert.ok(provisional.pendingTypeChoice);assert.equal(await card(provisional.id).getByRole('group',{name:'归为什么类型？',exact:true}).count(),1);await card(provisional.id).getByRole('button',{name:/^编辑/}).click();await page.locator('[data-slot=dialog-content]').getByRole('button',{name:'保存修改',exact:true}).click();assert.equal((await state()).customSets[provisional.id].pendingTypeChoice,true);await page.reload();await nav('录入与管理词汇');provisional=Object.values((await state()).customSets)[0];assert.ok(provisional.pendingTypeChoice);await card(provisional.id).getByRole('group').getByRole('button',{name:'自定义组',exact:true}).click();assert.equal((await state()).customSets[provisional.id].pendingTypeChoice,false)
- report.checks.push('Isolated into typed inherits type; two isolated default to grey custom; inline choice survives reload until explicit confirmation')
+ await reset();await dragWord('orange','shape-a');s=await state();assert.equal(s.words.orange.groupId,'shape-a');assert.equal(s.groups['shape-a'].wordIds.length,4);assert.equal(Object.keys(s.customSets).length,0);await undo('已加入形近组')
+ await dragWord('orange','pupil','custom');s=await state();const created=Object.values(s.customSets).find(g=>g.wordIds.includes('orange'))
+ assert.equal(created.pendingTypeChoice,undefined)
+ assert.equal(await card(created.id).getByText('归为什么类型？').count(),0)
+ await card(created.id).getByRole('button',{name:/^编辑/}).click()
+ dialog=page.locator('[data-slot=dialog-content]')
+ await dialog.getByRole('radio',{name:/近义组/}).click()
+ await dialog.getByRole('button',{name:'保存修改',exact:true}).click()
+ await dialog.waitFor({state:'hidden'})
+ await page.reload();await nav('录入与管理词汇')
+ assert.deepEqual((await state()).synonymSets[created.id].wordIds,['pupil','orange'])
+ report.checks.push('Two isolated words take the selected type directly; the pencil still changes the type and the edited group survives restart')
 
- await reset();await dragWord('adapt','stories');s=await state()
+ await reset();await dragWord('adapt','stories','synonym');s=await state()
  assert.deepEqual(s.groups['shape-a'].wordIds,fixture.groups['shape-a'].wordIds)
  assert.deepEqual(s.synonymSets.stories.wordIds,[...fixture.synonymSets.stories.wordIds,'adapt'])
  assert.equal(await page.locator('[data-management-word=adapt]').count(),2)
@@ -67,20 +95,167 @@ async function dragWord(word,target){await safeDrag(page.locator(`[data-drag-wor
  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='录入英文单词')
  report.checks.push('Dragging a word between relation types keeps both cards, with a single list row and both groups visible in search')
 
- await reset();await dragCard('shape-a','stories');s=await state();provisional=Object.values(s.customSets)[0];assert.equal(provisional.wordIds.length,6);assert.ok(provisional.pendingTypeChoice);assert.ok(!s.synonymSets.stories);assert.ok(!s.groups['shape-a']);assert.equal(Object.keys(s.words).length,15);assert.deepEqual(s.stats,fixture.stats);await shot('03-v2-pending-merge');await card(provisional.id).getByRole('group').getByRole('button',{name:'近义组',exact:true}).click();s=await state();assert.equal(s.synonymSets[provisional.id].wordIds.length,6);assert.equal(s.synonymSets[provisional.id].pendingTypeChoice,false);assert.ok(!s.customSets[provisional.id]);report.checks.push('Cross-type card merge defaults to persistent custom, then converts to chosen type with all words and learning history intact')
+ await reset();await dragCard('shape-a','stories','synonym');s=await state()
+ assert.equal(s.synonymSets.stories.wordIds.length,6)
+ assert.equal(s.synonymSets.stories.pendingTypeChoice,undefined)
+ assert.ok(!s.groups['shape-a'])
+ assert.equal(Object.keys(s.customSets).length,0)
+ assert.equal(Object.keys(s.words).length,15)
+ assert.deepEqual(s.stats,fixture.stats)
+ await shot('03-v2-direct-merge')
+ report.checks.push('Cross-type card merge commits the selected final type directly and preserves word and learning data')
 
- await reset();await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await row('fable').getByRole('button',{name:/长按拖动/}).press('ArrowDown');assert.equal(await dialog.locator('[data-editor-row-id]').first().getAttribute('data-editor-row-id'),'parable')
+ const scenarios=structuredClone(fixture)
+ const words={
+  heretic:['异端者','spelling-example'],hermetic:['密封的','spelling-example'],dissident:['持异议者','dissident'],
+  fatal:['致命的','fatal'],lethal:['致死的','lethal'],leather:['皮革','leather'],
+ }
+ for(const [n,[text,[gloss,groupId]]] of Object.entries(words).entries()){
+  scenarios.words[text]={id:text,text,gloss,meanings:[],source:'manual',groupId,addedAt:100+n}
+  scenarios.groups[groupId]??={id:groupId,wordIds:[],manual:false,createdAt:100+n}
+  scenarios.groups[groupId].wordIds.push(text)
+ }
+ scenarios.synonymSets['meaning-example']={id:'meaning-example',name:'致命',notes:'按义项复习',wordIds:['fatal','lethal'],createdAt:104}
+ await reset(scenarios)
+ await dragWord('heretic','dissident','synonym',async({move,dest})=>{
+  const overlay=card('dissident').locator('[data-drop-overlay]')
+  assert.deepEqual(await overlay.locator('[data-drop-zone]').evaluateAll(zones=>zones.map(z=>z.dataset.dropZone)),['shape','synonym','custom'])
+  for(const [fraction,kind] of [[.12,'shape'],[.46,'shape'],[.60,'synonym'],[.90,'custom'],[.65,'custom'],[.40,'synonym']]){
+   await move(fraction)
+   await page.waitForFunction(kind=>{
+    const grid=document.querySelector('.drop-zone-grid'), zones=[...grid.children], width=grid.getBoundingClientRect().width
+    return grid.parentElement.dataset.activeKind===kind && zones.every(zone=>
+     Math.abs(zone.getBoundingClientRect().width / width - (zone.dataset.dropZone===kind ? .5 : .25))<.005)
+   },kind)
+   const bounds=await card('dissident').boundingBox()
+   assert.equal(bounds.width,dest.width);assert.equal(bounds.height,dest.height)
+  }
+  // The overlay shows only the three zones; no hint text sits over the card.
+  assert.equal(await overlay.locator('.drop-zone-preview').count(),0)
+  await page.screenshot({path:path.join(out,'03-drop-zones.png'),animations:'disabled'})
+  report.screenshots.push('03-drop-zones.png')
+ })
+ s=await state()
+ assert.deepEqual(s.groups['spelling-example'].wordIds,['heretic','hermetic'])
+ assert.ok(Object.values(s.synonymSets).some(g=>JSON.stringify(g.wordIds)===JSON.stringify(['dissident','heretic'])))
+ await dragWord('lethal','leather','shape')
+ s=await state()
+ assert.deepEqual(s.synonymSets['meaning-example'],scenarios.synonymSets['meaning-example'])
+ assert.deepEqual(s.groups[s.words.lethal.groupId].wordIds,['leather','lethal'])
+ const origin=card('spelling-example')
+ const heretic=origin.locator('[data-drag-word="heretic"]')
+ for(const [source,start] of [[origin,{x:30,y:8}],[heretic,{x:25,y:15}]]){
+  await page.evaluate(()=>{
+   window._selfDropNotices=[]
+   window._selfDropObserver=new MutationObserver(records=>{
+    for(const record of records)for(const node of record.addedNodes){
+     if(node instanceof Element&&(node.matches('[data-sonner-toast]')||node.querySelector('[data-sonner-toast]')))window._selfDropNotices.push(node.textContent)
+    }
+   })
+   window._selfDropObserver.observe(document.body,{subtree:true,childList:true})
+  })
+  await safeDrag(source,card('orange'),start,'synonym',async()=>{
+   const box=await origin.boundingBox()
+   await page.mouse.move(box.x+26,box.y+28)
+   await page.mouse.move(box.x+27,box.y+28)
+   await page.locator('[data-drop-overlay]').waitFor({state:'detached'})
+   assert.equal(await origin.locator('[data-drop-overlay]').count(),0)
+   assert.equal(await page.getByText('松开移出本组',{exact:true}).isVisible(),false)
+  })
+  assert.deepEqual(await state(),s)
+  assert.deepEqual(await page.evaluate(()=>{window._selfDropObserver.disconnect();return window._selfDropNotices}),[])
+ }
+ await dragWord('hermetic','orange','synonym',async()=>{
+  await page.keyboard.press('Escape')
+  await page.locator('[data-drop-overlay]').waitFor({state:'detached'})
+ })
+ assert.deepEqual(await state(),s)
+ await dragWord('hermetic','orange','synonym',async()=>{
+  await page.mouse.move(44,83)
+  await page.mouse.move(45,84)
+  await page.locator('[data-drop-overlay]').waitFor({state:'detached'})
+  await page.getByText('松开移出本组',{exact:true}).waitFor()
+  assert.deepEqual(await state(),s)
+ })
+ const afterSidebar=await state()
+ assert.deepEqual(afterSidebar.groups['spelling-example'].wordIds,['heretic'])
+ assert.deepEqual(afterSidebar.synonymSets,s.synonymSets)
+ report.checks.push('Real mouse drops keep both polysemy examples intact; the overlay is stable, Escape and returning a card or member to its source cancel silently, and sidebar drops detach only the source membership')
+
+ const tall=structuredClone(fixture)
+ const members=Array.from({length:24},(_,i)=>'member'+i)
+ for(const [i,id] of members.entries()){
+  tall.words[id]={id,text:id,gloss:'长卡片释义',meanings:[],source:'manual',groupId:id,addedAt:400+i}
+  tall.groups[id]={id,wordIds:[id],manual:false,createdAt:400+i}
+ }
+ tall.synonymSets.tall={id:'tall',name:'长卡片',notes:'',wordIds:members,createdAt:400}
+ tall.words.pupil.addedAt=399
+ await page.setViewportSize({width:1440,height:760})
+ await reset(tall)
+ await nav('设置与备份')
+ await page.getByRole('button',{name:/^深色 /}).click()
+ await nav('录入与管理词汇')
+ await dragWord('pupil','tall','synonym',async({dest})=>{
+  const overlay=card('tall').locator('[data-drop-overlay]')
+  const {height}=page.viewportSize()
+  const x=dest.x+dest.width*.60
+  const before=await page.evaluate(()=>scrollY)
+  assert.ok(await overlay.evaluate(el=>el.getBoundingClientRect().height>innerHeight*1.5))
+  await page.mouse.move(x,height-42)
+  await page.mouse.move(x+1,height-42)
+  await page.waitForFunction(before=>scrollY>=before+20,before,{timeout:5000})
+  const geometry=await overlay.evaluate(el=>{
+   const top=document.querySelector('.management-sticky-inner').getBoundingClientRect().bottom
+   const bounds=el.getBoundingClientRect()
+   const labels=[...el.querySelectorAll('.drop-zone-label')].map(label=>{
+    const rect=label.getBoundingClientRect()
+    return {top:rect.top,bottom:rect.bottom,color:getComputedStyle(label.querySelector('svg')).color}
+   })
+   const corners=[...el.querySelectorAll('.drop-zone')].map(zone=>{
+    const frame=getComputedStyle(zone,'::before')
+    return [frame.top,frame.borderRadius]
+   })
+   return {top:Math.max(0,top,bounds.top),bottom:Math.min(innerHeight,bounds.bottom),labels,corners,opacity:getComputedStyle(el).backgroundColor}
+  })
+  assert.ok(geometry.labels.every(label=>label.top>=geometry.top-1&&label.bottom<=geometry.bottom+1),JSON.stringify(geometry))
+  assert.equal(new Set(geometry.labels.map(label=>label.color)).size,3)
+  assert.deepEqual(geometry.corners,[['5px','10px'],['5px','10px'],['5px','10px']])
+  assert.match(geometry.opacity,/0\.61\)$/)
+  await page.mouse.move(x,420)
+  await page.mouse.move(x+1,420)
+  const paused=await page.evaluate(()=>scrollY)
+  await page.waitForTimeout(220)
+  assert.ok(Math.abs((await page.evaluate(()=>scrollY))-paused)<=1)
+  await page.screenshot({path:path.join(out,'04-drop-zones-long-dark.png'),animations:'disabled'})
+  report.screenshots.push('04-drop-zones-long-dark.png')
+  await page.mouse.move(x,42)
+  await page.mouse.move(x+1,42)
+  await page.waitForFunction(paused=>scrollY<=paused-15,paused,{timeout:5000})
+  await page.mouse.move(x,480)
+  await page.mouse.move(x+1,480)
+  await overlay.locator('[data-selected=true][data-drop-zone=synonym]').waitFor({timeout:5000})
+ })
+ assert.deepEqual((await state()).synonymSets.tall.wordIds,[...members,'pupil'])
+ const stopped=await page.evaluate(()=>scrollY)
+ await page.waitForTimeout(200)
+ assert.ok(Math.abs((await page.evaluate(()=>scrollY))-stopped)<=1)
+ await nav('设置与备份')
+ await page.getByRole('button',{name:/^浅色 /}).click()
+ await page.setViewportSize({width:1920,height:1100})
+ report.checks.push('Holding a drag still scrolls down or up near the edges; long-card labels and colored icons stay inside the visible area and the selected drop commits')
+
+ await reset();await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await row('fable').getByRole('button',{name:/排序，或按上下方向键调整/}).press('ArrowDown');assert.equal(await dialog.locator('[data-editor-row-id]').first().getAttribute('data-editor-row-id'),'parable')
  await row('parable').getByRole('button',{name:'编辑词条',exact:false}).click();await dialog.getByLabel('编辑 parable 的用法笔记',{exact:true}).fill('比较寓意与使用场景');await shot('04-v2-editor-light');await dialog.getByRole('button',{name:'保存修改',exact:true}).click();await dialog.waitFor({state:'hidden'});s=await state();assert.deepEqual(s.synonymSets.stories.wordIds,['parable','fable','apologue']);assert.equal(s.words.parable.usageNote,'比较寓意与使用场景')
- await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');const grip=row('parable').getByRole('button',{name:/长按拖动/});await grip.dispatchEvent('pointerdown',{button:0,pointerType:'mouse'});await page.waitForTimeout(300);const start=await grip.boundingBox(),end=await row('apologue').boundingBox();await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.waitForTimeout(300);await page.mouse.move(end.x+40,end.y+end.height-5,{steps:8});await page.mouse.up();await dialog.getByRole('button',{name:'保存修改',exact:true}).click();await dialog.waitFor({state:'hidden'});assert.deepEqual((await state()).synonymSets.stories.wordIds,['fable','apologue','parable']);report.checks.push('One editor saves group and word edits together; keyboard reorder and armed 250ms drag reorder persist in card order')
+ await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');const grip=row('parable').getByRole('button',{name:/排序，或按上下方向键调整/});const start=await grip.boundingBox(),end=await row('apologue').boundingBox();await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(end.x+40,end.y+end.height-5,{steps:8});await page.mouse.up();await dialog.getByRole('button',{name:'保存修改',exact:true}).click();await dialog.waitFor({state:'hidden'});assert.deepEqual((await state()).synonymSets.stories.wordIds,['fable','apologue','parable']);report.checks.push('One editor saves group and word edits together; keyboard reorder and an immediate handle drag persist in card order')
 
  await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await row('fable').getByRole('button',{name:'管理「fable」的成员操作',exact:true}).click();await page.locator('[data-slot=popover-content]').getByRole('button',{name:/^移出本组/}).click();assert.ok((await state()).synonymSets.stories.wordIds.includes('fable'));await page.locator('[data-slot=popover-content]').getByRole('button',{name:'移出本组',exact:true}).click();assert.ok(!(await state()).synonymSets.stories.wordIds.includes('fable'));assert.ok((await state()).words.fable);await undo('从「近义组 · 寓言」移出');assert.ok((await state()).synonymSets.stories.wordIds.includes('fable'))
  await row('fable').getByRole('button',{name:'管理「fable」的成员操作',exact:true}).click();await page.locator('[data-slot=popover-content]').getByRole('button',{name:/^删除单词/}).click();assert.ok((await state()).words.fable);await page.locator('[data-slot=popover-content]').getByRole('button',{name:'删除单词',exact:true}).click();assert.ok(!(await state()).words.fable);await undo('删除「fable」');assert.ok((await state()).words.fable);await closeEditor();report.checks.push('Circle-minus menu distinguishes kick and global delete, requires a second confirmation, and snackbar undo works inside the editor')
 
  await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();dialog=page.locator('[data-slot=dialog-content]');await dialog.getByRole('textbox',{name:/组名/}).fill('尚未保存的组名');await app.evaluate(({dialog,BrowserWindow})=>{globalThis._originalCloseDialog=dialog.showMessageBoxSync;globalThis._closePrompts=0;dialog.showMessageBoxSync=()=>{globalThis._closePrompts++;return 0};BrowserWindow.getAllWindows()[0].close()});await page.waitForTimeout(250);assert.equal(page.isClosed(),false);assert.equal(await app.evaluate(()=>globalThis._closePrompts),1);await app.evaluate(({dialog})=>{dialog.showMessageBoxSync=globalThis._originalCloseDialog});await closeEditor();report.checks.push('Closing the desktop app with unsaved editor changes prompts; cancel keeps the workspace and values open')
- await reset();await nav('设置与备份');await page.getByLabel('近义词模式',{exact:true}).selectOption('verified');let selectBox=await page.getByLabel('近义词模式',{exact:true}).boundingBox(),sectionBox=await page.locator('section').filter({has:page.getByLabel('近义词模式',{exact:true})}).boundingBox();assert.ok(sectionBox.x+sectionBox.width-selectBox.x-selectBox.width<35)
+ await reset();await nav('设置与备份');await page.getByRole('radiogroup',{name:'近义词模式',exact:true}).getByRole('radio',{name:'联网校验'}).click();let selectBox=await page.getByRole('radiogroup',{name:'近义词模式',exact:true}).boundingBox(),sectionBox=await page.locator('section').filter({has:page.getByRole('radiogroup',{name:'近义词模式',exact:true})}).boundingBox();assert.ok(sectionBox.x+sectionBox.width-selectBox.x-selectBox.width<35)
  for(const b of await page.locator('.backup-primary-actions > button').all()){const box=await b.boundingBox();assert.ok(box.width<240)}await shot('05-v2-settings-light');report.checks.push('Synonym selector aligns to right edge; backup primary actions stay natural width on a wide screen')
 
- await nav('综合抽查');await page.getByRole('button',{name:'看中文 · 选英文 再认练习',exact:true}).click();await page.getByRole('button',{name:/^开始/}).click();assert.equal(await page.locator('.quiz-option').count(),4);const bounds=await page.locator('.quiz-option').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}));assert.ok(Math.abs(bounds[0].y-bounds[1].y)<2);assert.ok(Math.abs(bounds[2].y-bounds[3].y)<2);assert.ok(Math.abs(bounds[0].x-bounds[2].x)<2);await shot('06-v2-choice-aligned');await page.getByRole('button',{name:'结束本轮',exact:true}).click();await page.getByRole('button',{name:'近义组回忆 每组一题 · 按词计分',exact:true}).click();await page.getByRole('combobox').first().click();await page.getByRole('option',{name:/近义组 · 寓言/}).click();await page.getByRole('button',{name:/^开始/}).click();assert.equal(await page.locator('.quiz-prompt-text').textContent(),'近义组 · 寓言');assert.equal(await page.locator('.study-workspace').getByText(/笔记已隐藏|来源：Open English/).count(),0);await shot('07-v2-synonym-prompt');report.checks.push('Four multiple-choice buttons form aligned 2x2 rows; cleaned synonym prompt has no source or developer defensive copy')
+ await nav('综合抽查');await page.getByRole('button',{name:'看中文 · 选英文 再认练习',exact:true}).click();await page.getByRole('button',{name:/^开始/}).click();assert.equal(await page.locator('.quiz-option').count(),4);const bounds=await page.locator('.quiz-option').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}));assert.ok(Math.abs(bounds[0].y-bounds[1].y)<2);assert.ok(Math.abs(bounds[2].y-bounds[3].y)<2);assert.ok(Math.abs(bounds[0].x-bounds[2].x)<2);await shot('06-v2-choice-aligned');await page.getByRole('button',{name:'结束本轮',exact:true}).click();await page.getByRole('button',{name:'近义组回忆 每组一题 · 按词计分',exact:true}).click();await page.getByRole('combobox').first().click();await page.getByRole('option',{name:/近义组 · 寓言/}).click();await page.getByRole('button',{name:/^开始/}).click();assert.equal(await page.locator('.quiz-prompt-text').textContent(),'寓言');assert.equal(await page.locator('.quiz-prompt-meta').getByText('近义组回忆',{exact:true}).count(),1);assert.equal(await page.locator('.study-workspace').getByText(/笔记已隐藏|来源：Open English/).count(),0);await shot('07-v2-synonym-prompt');report.checks.push('Four multiple-choice buttons form aligned 2x2 rows; cleaned synonym prompt has no source or developer defensive copy')
 
  await nav('设置与备份');await page.getByRole('button',{name:/^深色 /}).click();await nav('录入与管理词汇');await shot('08-v2-cards-dark');await card('stories').getByRole('button',{name:'编辑 近义组 · 寓言',exact:true}).click();await page.setViewportSize({width:390,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await shot('09-v2-editor-narrow');await closeEditor()
  for(const width of [820,390]){await page.setViewportSize({width,height:900});for(const name of ['录入与管理词汇','设置与备份']){await nav(name);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)}}

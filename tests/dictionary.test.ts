@@ -77,3 +77,24 @@ test('backup keeps adjective and noun translations when the standalone translati
   assert.equal(result.gloss, '充气轮胎；用压缩空气驱动的')
   assert.equal(result.phonetic, '/njuːˈmætɪk/')
 })
+
+test('emits one progress event before querying the backup for an incorrect Youdao entry', async t => {
+  const events: string[] = []
+  t.mock.method(globalThis, 'fetch', async (input: string) => {
+    const request = new URL(input, 'https://lexicon.invalid')
+    if (request.pathname.startsWith('/youdao/')) {
+      events.push('youdao')
+      return Response.json({ input: 'misdirected' })
+    }
+    if (request.searchParams.get('url')?.includes('backup.example')) {
+      events.push('backup')
+      return Response.json({ translation: '备用译文' })
+    }
+    return new Response(null, {status: 404})
+  })
+  await assert.rejects(lookupWord('fallbackfixture', undefined, [
+    ...youdaoOnly,
+    {id: 'custom', label: 'Backup', enabled: true, endpoint: 'https://backup.example/{word}'},
+  ], () => events.push('notice')), WordNotFoundError)
+  assert.deepEqual(events, ['youdao', 'notice', 'backup'])
+})

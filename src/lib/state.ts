@@ -87,3 +87,30 @@ export function normalizeState(value: unknown, defaults: LibraryState, reconcile
   }
   return reconcile ? reconcileRelations(state, true) : state
 }
+
+const DERIVED_TITLE = /^[a-z][a-z' -]*(?: \/ [a-z][a-z' -]*)+(?: …)?$/
+const KIND_PREFIX = /^(?:形近组|自定义组)\s*[·•:：-]?\s*/
+
+/**
+ * Data migration applied when a library is opened or imported.
+ *
+ * Before v3.0.5 the group editor pre-filled the automatic title ("a / b / c …")
+ * and stored it as the group's name on any save, so the title stopped following
+ * later member changes. Such names are cleared so the title is derived again.
+ * Synonym names are short glosses either way and stay untouched. Idempotent.
+ */
+export function migrateLibrary(state: LibraryState): LibraryState {
+  const frozen = (name: string | undefined, wordIds: string[]) => {
+    const label = name?.trim().replace(KIND_PREFIX, '') ?? ''
+    if (!DERIVED_TITLE.test(label)) return false
+    const members = new Set(wordIds.map(id => state.words[id]?.text))
+    return label.replace(/ …$/, '').split(' / ').some(token => members.has(token))
+  }
+  for (const group of Object.values(state.groups)) {
+    if (group.wordIds.length > 1 && frozen(group.name, group.wordIds)) delete group.name
+  }
+  for (const group of Object.values(state.customSets ?? {})) {
+    if (frozen(group.name, group.wordIds)) { group.name = ''; group.nameSource = 'auto' }
+  }
+  return state
+}

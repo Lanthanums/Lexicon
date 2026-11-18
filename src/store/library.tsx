@@ -21,7 +21,7 @@ import type {
 } from '@/types'
 import { wordSimilarity } from '@/lib/similarity'
 import type { ThresholdSuggestion } from '@/lib/learn'
-import { normalizeState } from '@/lib/state'
+import { migrateLibrary, normalizeState } from '@/lib/state'
 import { BEFORE_IMPORT_KEY, EMPTY, MAX_SNAPSHOT_BYTES, STORAGE_KEY } from '@/lib/libraryDefaults'
 
 /** local-date key YYYY-MM-DD (not UTC — the user's day rolls at midnight) */
@@ -98,7 +98,8 @@ interface LibraryApi {
   removeDictProvider: (id: string) => void
   /** move a provider to the front of the chain, making it the primary */
   setPrimaryProvider: (id: string) => void
-  recluster: (baseline: LibraryState, clusters: string[][]) => void
+  /** Returns an undo callback; throws when the library changed during the preview. */
+  recluster: (baseline: LibraryState, clusters: string[][]) => () => void
   setLearningEnabled: (on: boolean) => void
   applyTrace: (id: string) => void
   ackTrace: (id: string) => void
@@ -124,7 +125,7 @@ function load(): LibraryState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return EMPTY
-    return normalizeState(JSON.parse(raw), EMPTY)
+    return migrateLibrary(normalizeState(JSON.parse(raw), EMPTY))
 
   } catch {
     try {
@@ -726,29 +727,27 @@ export function LibraryProvider({ children, initialState, snapshotAt = 0, preser
   }, [setState])
 
   const recluster = useCallback((baseline: LibraryState, clusters: string[][]) => {
-    setState(prev => {
-      if (prev.words !== baseline.words || prev.groups !== baseline.groups ||
-          prev.settings.threshold !== baseline.settings.threshold) {
-        throw new Error('计算期间词库或阈值发生变化，请重新分组')
-      }
+    const prev = stateRef.current
+    if (prev.words !== baseline.words || prev.groups !== baseline.groups ||
+        prev.settings.threshold !== baseline.settings.threshold) {
+      throw new Error('计算期间词库或阈值发生变化，请重新分组')
+    }
+    // A transaction keeps names in the relation archive and makes the change undoable.
+    return managementTransaction(draft => {
       const groups: Record<string, WordGroup> = {}
-      const words = { ...prev.words }
       for (const cluster of clusters) {
-        const existing = prev.groups[words[cluster[0]].groupId]
-        const preserved = (
+        const existing = draft.groups[draft.words[cluster[0]].groupId]
+        const preserved = !!existing && (
           existing.wordIds.length === cluster.length &&
-          cluster.every(id => words[id].groupId === existing.id)
+          cluster.every(id => draft.words[id].groupId === existing.id)
         )
         const group = preserved ? existing : { id: crypto.randomUUID(), manual: false, createdAt: Date.now() }
-        const gid = group.id
-        groups[gid] = { ...group, wordIds: cluster, kind: cluster.length > 1 ? 'confusable' : 'single' }
-        for (const id of cluster) {
-          if (words[id].groupId !== gid) words[id] = { ...words[id], groupId: gid }
-        }
+        groups[group.id] = { ...group, wordIds: cluster, kind: cluster.length > 1 ? 'confusable' : 'single' }
+        for (const id of cluster) draft.words[id].groupId = group.id
       }
-      return { ...prev, words, groups }
+      draft.groups = groups
     })
-  }, [setState])
+  }, [managementTransaction])
 
   const recordAnswer = useCallback((id: string, correct: boolean) => {
     setState((prev) => {
@@ -823,7 +822,7 @@ export function LibraryProvider({ children, initialState, snapshotAt = 0, preser
     if (importing.current) return false
     importing.current = true
     try {
-      const parsed = normalizeState(JSON.parse(json), EMPTY)
+      const parsed = migrateLibrary(normalizeState(JSON.parse(json), EMPTY))
       if (window.lexicon && new Blob([JSON.stringify(parsed)]).size > MAX_SNAPSHOT_BYTES - 64) {
         toast.error('词库超过桌面快照的 32 MiB 容量')
         return false

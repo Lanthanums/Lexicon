@@ -83,7 +83,9 @@ async function mockDictionary(){await page.evaluate(()=>{
   const b=container.querySelector(`[data-card-id="${lower}"]`)?.getBoundingClientRect()
   return a&&b&&Math.abs(a.x-b.x)<1&&Math.abs(b.top-a.bottom-16)<1
  },{upper,lower})
- assert.ok(await packedBelow('fixtureag','fixturead'))
+ // Fonts and collapsed glosses settle a frame or two after import; judge the settled layout.
+ const settled=async(upper,lower)=>{for(let i=0;i<20;i++){if(await packedBelow(upper,lower))return true;await page.waitForTimeout(100)}return false}
+ assert.ok(await settled('fixtureag','fixturead'))
  const tall=await masonry.locator('[data-card-id=fixtureaf]').boundingBox()
  const fourth=await masonry.locator('[data-card-id=fixturead]').boundingBox()
  assert.ok(fourth.y+fourth.height<tall.y+tall.height)
@@ -117,24 +119,27 @@ async function mockDictionary(){await page.evaluate(()=>{
  assert.ok(await shapeCard.getByRole('button',{name:'重试 affluent 的释义',exact:true}).isVisible())
  report.checks.push('Retry beside the pencil targets one suspect member, bypasses Youdao, preserves the original on failure and updates shared definitions on success')
 
- await input.fill('coriander;unsourced;blankmeaning');await page.getByRole('button',{name:'查询并加入',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('heading',{name:'确认本次入库',exact:true}).waitFor();assert.equal(await page.getByRole('dialog').count(),1);assert.equal(Object.keys((await state()).words).length,68)
- const missing=dialog.getByPlaceholder('未查到释义，可手动补充或留空跳过');assert.equal(await missing.count(),2);await missing.first().fill('手动补充释义');await shot('43-batch-review');await dialog.getByRole('button',{name:'确认并入库',exact:true}).click();await dialog.waitFor({state:'hidden'});s=await state();assert.equal(Object.keys(s.words).length,70);assert.ok(Object.values(s.words).some(w=>w.text==='unsourced'&&w.gloss==='手动补充释义'));assert.ok(!Object.values(s.words).some(w=>w.text==='blankmeaning'));assert.equal(await input.inputValue(),'blankmeaning');assert.equal(await page.locator('[data-sonner-toast]').filter({hasText:'未查到释义（未入库）：blankmeaning'}).count(),1)
+ await input.fill('coriander;unsourced;blankmeaning');await page.getByRole('button',{name:'查询并加入',exact:true}).click();dialog=page.getByRole('dialog',{name:'补充中文释义',exact:true});await dialog.waitFor();assert.equal(await page.getByRole('dialog').count(),1);assert.equal(Object.keys((await state()).words).length,68)
+ const missing=dialog.getByPlaceholder('输入中文释义');assert.equal(await missing.count(),2);await missing.first().fill('手动补充释义');await shot('43-batch-review');await dialog.getByRole('button',{name:'继续录入',exact:true}).click();await dialog.waitFor({state:'hidden'});s=await state();assert.equal(Object.keys(s.words).length,70);assert.ok(Object.values(s.words).some(w=>w.text==='unsourced'&&w.gloss==='手动补充释义'));assert.ok(!Object.values(s.words).some(w=>w.text==='blankmeaning'));assert.equal(await input.inputValue(),'blankmeaning');assert.equal(await page.locator('[data-sonner-toast]').filter({hasText:'已跳过缺少释义的词：blankmeaning'}).count(),1)
  await entryFocused()
  report.checks.push('Multiple missing definitions share one review dialog, stage no partial writes, accept manual meanings and summarize skipped exceptions once')
 
- await input.fill('meandering;delayedword');await page.getByRole('button',{name:'查询并加入',exact:true}).click();await page.getByRole('button',{name:'取消查询',exact:true}).click();await input.fill('cotangent');await page.getByRole('button',{name:'查询并加入',exact:true}).click();await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lexicon-state-v1')).words).some(w=>w.text==='cotangent'));await page.waitForTimeout(1100);s=await state();assert.ok(!Object.values(s.words).some(w=>['meandering','delayedword'].includes(w.text)));assert.equal(await page.getByRole('button',{name:'取消查询',exact:true}).count(),0);assert.equal(await page.getByRole('dialog').count(),0);assert.ok(!(await page.evaluate(()=>window._entryRequests)).includes('delayedword'))
+ await input.fill('meandering;delayedword');await page.getByRole('button',{name:'查询并加入',exact:true}).click();await page.getByRole('button',{name:'取消查询',exact:true}).click();await input.fill('cotangent');await page.getByRole('button',{name:'查询并加入',exact:true}).click();await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lexicon-state-v1')).words).some(w=>w.text==='cotangent'));await page.waitForTimeout(1100);s=await state();assert.ok(!Object.values(s.words).some(w=>['meandering','delayedword'].includes(w.text)));assert.equal(await page.getByRole('button',{name:'取消查询',exact:true}).count(),0);assert.equal(await page.getByRole('dialog').count(),0)
+ // Lookups run concurrently, so both words may already be requested; cancelling must still discard their late responses.
  report.checks.push('Cancel never re-submits the form; even a late provider response cannot add a word or reset a newer query')
 
- await page.evaluate(()=>window.scrollTo(0,0));const controls=page.locator('.management-sticky'),resting=await controls.boundingBox()
- const texts=[controls.getByRole('heading',{name:'词库',exact:true}),controls.getByText(/个单词 ·/),controls.getByText(/用分号或换行分隔/)]
+ await page.evaluate(()=>window.scrollTo(0,0));const controls=page.locator('.management-sticky-inner'),resting=await controls.boundingBox()
+ const texts=[controls.getByRole('heading',{name:'词库',exact:true}),controls.getByText(/拖词入组，拖卡合组/),controls.getByText(/用分号或换行分隔/)]
  for(const scroll of [resting.y-1,resting.y+1,resting.y-1,1100]){
   await page.evaluate(y=>window.scrollTo(0,y),scroll);await page.waitForTimeout(240)
-  const box=await controls.boundingBox();assert.ok(box.y>=0&&box.y<20);assert.ok(Math.abs(box.height-resting.height)<0.5)
-  for(const label of texts)assert.ok(await label.isVisible())
+  const box=await controls.boundingBox();assert.ok(box.y>=0&&box.y<20)
+  // Pinned controls condense: the entry field and heading stay, helper copy folds away.
+  if(scroll>resting.y){assert.equal(await page.locator('.management-sticky').getAttribute('data-stuck'),'true');assert.ok(box.height<resting.height-40);assert.ok(await controls.getByRole('textbox',{name:'录入英文单词'}).isVisible());assert.ok(await texts[0].isVisible());assert.ok(!(await texts[1].isVisible())&&!(await texts[2].isVisible()))}
+  else{assert.ok(Math.abs(box.height-resting.height)<0.5);for(const label of texts)assert.ok(await label.isVisible())}
  }
  await entryFocused();await shot('44-sticky-entry')
  for(const width of [820,390]){await page.setViewportSize({width,height:900});await page.waitForTimeout(300);const b=await controls.boundingBox();assert.ok(b.height<500);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)}
- await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await controls.evaluate(el=>getComputedStyle(el).transitionDuration),'1e-05s');await page.emulateMedia({reducedMotion:'no-preference'});report.checks.push('Entry and management controls keep the same size and text across the sticky boundary, with no horizontal overflow at desktop/tablet/phone widths')
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await controls.evaluate(el=>getComputedStyle(el).transitionDuration),'1e-05s');await page.emulateMedia({reducedMotion:'no-preference'});report.checks.push('Entry and management controls condense once pinned and restore at rest, with no horizontal overflow at desktop/tablet/phone widths')
 
  await page.setViewportSize({width:1920,height:1100});await nav('今日学习');assert.equal(await page.getByText('Look closer',{exact:true}).count(),0);let chart=page.getByTestId('home-activity');await chart.waitFor();assert.equal(await chart.getByRole('img',{name:/近14天录入/}).count(),1);assert.ok(await chart.locator('.recharts-yAxis .recharts-cartesian-axis-tick').count()>0);await chart.getByRole('button',{name:'近 30 天',exact:true}).click();assert.equal(await chart.getByRole('img',{name:/近30天录入/}).count(),1);await shot('45-home-light',true)
  await nav('设置与备份');const backup=page.locator('.settings-card').filter({has:page.getByRole('heading',{name:'数据与备份',exact:true})});const exp=await backup.getByRole('button',{name:'导出备份',exact:true}).boundingBox(),imp=await backup.getByRole('button',{name:'导入备份',exact:true}).boundingBox(),folder=await backup.getByRole('button',{name:'打开数据文件夹',exact:true}).boundingBox(),restore=await backup.getByRole('button',{name:'恢复导入前副本',exact:true}).boundingBox(),del=await backup.getByRole('button',{name:'清空全部数据',exact:true}).boundingBox();assert.ok(Math.abs(exp.y-imp.y)<2);assert.ok(folder.x>imp.x+imp.width+100);assert.ok(restore.y>exp.y+exp.height+20);assert.ok(Math.abs(restore.y-del.y)<5);assert.ok(exp.width<240&&imp.width<240);await backup.scrollIntoViewIfNeeded();await shot('46-backup-layout')
@@ -142,7 +147,40 @@ async function mockDictionary(){await page.evaluate(()=>{
  report.checks.push('Homepage removes obsolete links, renders labelled history charts with 14/30-day detail, and backup actions form three clear spatial groups in the existing palette')
 
  await page.setViewportSize({width:1440,height:1000});const ties=fixture(0);for(const text of ['dare','care']){ties.words[text]={id:text,text,gloss:'示例词义',meanings:[],source:'manual',groupId:text,addedAt:1};ties.groups[text]={id:text,wordIds:[text],manual:false,createdAt:1}}
- await importFixture(ties);await nav('录入与管理词汇');await input.fill('fare;mare;unsourced');await page.getByRole('button',{name:'查询并加入',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('heading',{name:'确认本次入库',exact:true}).waitFor();assert.equal(await page.getByRole('dialog').count(),1);assert.equal(await dialog.getByLabel('形近关系',{exact:true}).count(),2);assert.equal(Object.keys((await state()).words).length,2);await dialog.getByRole('button',{name:'取消入库',exact:true}).click();await dialog.waitFor({state:'hidden'});assert.equal(Object.keys((await state()).words).length,2);await page.getByRole('button',{name:'查询并加入',exact:true}).click();await dialog.getByRole('heading',{name:'确认本次入库',exact:true}).waitFor();await dialog.getByLabel('形近关系',{exact:true}).first().selectOption('care');await dialog.getByPlaceholder('未查到释义，可手动补充或留空跳过').fill('补充的释义');await shot('48-batch-ties');await dialog.getByRole('button',{name:'确认并入库',exact:true}).click();const staleShape=dialog.getByLabel('形近关系',{exact:true}).filter({has:page.locator('option[value="__lexicon_choose_again__"]')});await staleShape.waitFor();assert.equal(await dialog.getByRole('button',{name:'确认并入库',exact:true}).isEnabled(),false);assert.equal(Object.keys((await state()).words).length,2);await staleShape.selectOption('care');await dialog.getByRole('button',{name:'确认并入库',exact:true}).click();await dialog.waitFor({state:'hidden'});s=await state();assert.equal(Object.keys(s.words).length,5);assert.equal(Object.values(s.words).find(w=>w.text==='fare').groupId,'care');report.checks.push('Two ambiguous grouping decisions and a missing definition share one dialog; cancelling writes nothing and selected groups survive sequential re-planning before atomic save')
+ await importFixture(ties)
+ await nav('录入与管理词汇')
+ await input.fill('fare;mare;unsourced')
+ const glossReview=page.getByRole('dialog',{name:'补充中文释义',exact:true})
+ const shapeReview=page.getByRole('dialog',{name:'选择形近组',exact:true})
+ for(const cancel of [true,false]){
+  await page.getByRole('button',{name:'查询并加入',exact:true}).click()
+  await glossReview.getByRole('textbox',{name:'中文释义',exact:true}).fill('补充的释义')
+  await glossReview.getByRole('button',{name:'继续录入',exact:true}).click()
+  await shapeReview.getByText('fare',{exact:true}).waitFor()
+  assert.equal(await shapeReview.getByRole('radio').count(),3)
+  const confirm=shapeReview.getByRole('button',{name:'确认选择',exact:true})
+  assert.equal(await confirm.isEnabled(),false)
+  await shapeReview.getByRole('radio',{name:/care/}).check()
+  await confirm.click()
+  await shapeReview.getByText('mare',{exact:true}).waitFor()
+  assert.equal(await confirm.isEnabled(),false)
+  assert.equal(Object.keys((await state()).words).length,2)
+  if(cancel){
+   await shapeReview.getByRole('button',{name:'取消本次录入',exact:true}).click()
+   await shapeReview.waitFor({state:'hidden'})
+   assert.equal(Object.keys((await state()).words).length,2)
+  }else{
+   await shot('48-batch-ties')
+   await shapeReview.getByRole('radio',{name:/dare/}).check()
+   await confirm.click()
+   await shapeReview.waitFor({state:'hidden'})
+   s=await state()
+   assert.equal(Object.keys(s.words).length,5)
+   assert.equal(Object.values(s.words).find(w=>w.text==='fare').groupId,'care')
+   assert.equal(Object.values(s.words).find(w=>w.text==='mare').groupId,'dare')
+  }
+ }
+ report.checks.push('A missing definition and two ambiguous shape decisions are prompted separately; cancelling writes nothing and the last confirmation saves both selected groups')
 
  await importFixture(fixture(0));await nav('录入与管理词汇')
  await input.fill('pneumatic');await input.press('Enter')
@@ -187,24 +225,56 @@ async function mockDictionary(){await page.evaluate(()=>{
  conflict.synonymSets[oldNear.id]=oldNear
  await importFixture(conflict);await nav('录入与管理词汇')
  await input.fill('fatal');await input.press('Enter')
- dialog=page.getByRole('dialog')
- const near=dialog.getByLabel('近义关系',{exact:true})
- await near.waitFor()
- assert.equal(await near.inputValue(),'')
- await dialog.getByRole('button',{name:'取消入库',exact:true}).click()
- await dialog.waitFor({state:'hidden'})
- assert.deepEqual((await state()).synonymSets[oldNear.id],oldNear)
- assert.equal(Object.keys((await state()).words).length,2)
- await input.press('Enter')
- await near.selectOption({label:'新建 fatal / lethal（从「近义组 · 旧近义组」移出 lethal）'})
- await dialog.getByRole('button',{name:'确认并入库',exact:true}).click()
- await dialog.waitFor({state:'hidden'})
+ await page.getByText('已入库 1 个单词',{exact:true}).waitFor()
+ assert.equal(await page.getByRole('dialog').count(),0)
  const repaired=await state(),fatal=Object.values(repaired.words).find(word=>word.text==='fatal')
  assert.deepEqual(repaired.groups.shape.wordIds,['leather','lethal'])
- assert.deepEqual(Object.values(repaired.synonymSets).map(group=>group.wordIds),[['lethal',fatal.id]])
- assert.deepEqual(repaired.relationArchive,[oldNear])
+ assert.deepEqual(repaired.synonymSets[oldNear.id],oldNear)
+ assert.deepEqual(repaired.synonymSets['near-'+fatal.id].wordIds,['lethal',fatal.id])
+ assert.equal(repaired.relationArchive,undefined)
  assert.equal(await page.locator('[data-card-kind=isolated]').getByText('fatal',{exact:true}).count(),0)
- report.checks.push('An existing incompatible synonym group can be reassigned by explicit choice, preserving its notes in the archive and retaining the shape group')
+ report.checks.push('A word from an incompatible synonym group can join a new group without a prompt, preserving the original group and notes')
+
+ const senses=fixture(0)
+ for(const [text,gloss] of [
+  ['banking concern','银行机构'],['depository financial institution','存款金融机构'],
+  ['coin bank','储钱罐'],['money box','存钱盒'],['rely','依赖'],
+ ]){
+  senses.words[text]={id:text,text,gloss,meanings:[],source:'manual',groupId:text,addedAt:1}
+  senses.groups[text]={id:text,wordIds:[text],manual:false,createdAt:1}
+ }
+ senses.synonymSets.finance={id:'finance',name:'金融机构',notes:'保留金融笔记',wordIds:['depository financial institution','banking concern'],createdAt:1}
+ senses.synonymSets.savings={id:'savings',name:'储钱罐',notes:'保留储蓄笔记',wordIds:['coin bank','money box'],createdAt:2}
+ senses.settings.threshold=.95
+ await importFixture(senses);await nav('录入与管理词汇')
+ await input.fill('bank');await input.press('Enter')
+ const notice=page.getByText(/「bank」已加入 3 个近义组/)
+ for(const group of ['金融机构','储钱罐','依赖']) assert.match(await notice.textContent(),new RegExp(group))
+ assert.equal(await page.getByRole('dialog').count(),0)
+ const bank=Object.values((await state()).words).find(word=>word.text==='bank')
+ const bankRows=page.locator(`[data-management-word="${bank.id}"]`)
+ assert.equal(await bankRows.count(),3)
+ const bankState=await state()
+ for(const id of ['finance','savings']) {
+  assert.deepEqual(bankState.synonymSets[id],{...senses.synonymSets[id],wordIds:[...senses.synonymSets[id].wordIds,bank.id]})
+ }
+ assert.deepEqual(bankState.synonymSets['near-'+bank.id].wordIds,['rely',bank.id])
+ await page.getByRole('button',{name:'列表视图',exact:true}).click()
+ assert.equal(await bankRows.count(),1)
+ assert.deepEqual(await bankRows.getByRole('button',{name:/近义组 · /}).allTextContents(),['近义组 · 金融机构','近义组 · 储钱罐','近义组 · 依赖'])
+ await bankRows.getByRole('button',{name:'近义组 · 储钱罐',exact:true}).click()
+ await page.locator('[data-card-id=savings]').getByText('bank',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'搜索词库',exact:true}).click()
+ await page.getByRole('textbox',{name:'搜索关键词'}).fill('bank')
+ const bankResult=page.getByRole('dialog').getByRole('button',{name:/^bank .*金融机构.*储钱罐.*依赖/})
+ await bankResult.waitFor()
+ await page.keyboard.press('Escape')
+ await nav('综合抽查')
+ await page.getByRole('button',{name:'近义组回忆 每组一题 · 按词计分',exact:true}).click()
+ await page.getByRole('combobox').first().click()
+ for(const group of ['金融机构','储钱罐','依赖']) await page.getByRole('option',{name:new RegExp(group)}).waitFor()
+ await page.keyboard.press('Escape')
+ report.checks.push('Real WordNet senses add bank to three groups without a prompt; toast, cards, list links, search and group recall reflect all memberships')
 
  const f=fixture(3),ids=Object.keys(f.words);f.words[ids[0]].gloss='已经到期的测试词';f.stats[ids[0]]={correct:2,wrong:0,level:2,lastSeen:Date.now()-3*86400000,dueAt:Date.now()-86400000};f.stats[ids[2]]={correct:2,wrong:0,level:2,lastSeen:Date.now(),dueAt:Date.now()+7*86400000};await importFixture(f);await nav('综合抽查');assert.equal(await page.getByText(/推演假设|每日三档合计|不推测未记录的学习/).count(),0);await page.getByRole('button',{name:'听义拼写 主动回忆',exact:true}).click();await page.getByRole('button',{name:/^开始/}).click();assert.equal(await page.locator('.quiz-prompt-text').textContent(),'已经到期的测试词');await page.getByPlaceholder('拼出这个单词…').fill(ids[0]);await page.getByRole('button',{name:'确定',exact:true}).click();s=await state();assert.ok(s.stats[ids[0]].memory?.stability>0);assert.ok(s.stats[ids[0]].dueAt>Date.now());report.checks.push('Quiz selects due words before new/future words and saves adaptive memory scheduling; removed developer explanations stay absent')
  assert.deepEqual(report.errors,[]);report.passed=true

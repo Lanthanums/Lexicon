@@ -583,7 +583,7 @@ export default function Settings({
 
   return (
     <div className="settings-layout">
-      <h3 className="settings-category">外观</h3>
+      <h3 className="settings-category">界面</h3>
       <Appearance />
       <h3 className="settings-category">形近词</h3>
       <section className="settings-card" aria-labelledby="shape-settings-title">
@@ -604,7 +604,10 @@ export default function Settings({
             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重新分组？</AlertDialogTitle><AlertDialogDescription>将以阈值 {shown.toFixed(2)} 重新计算所有单词的形近关系，保留手动形近组。近义关系与学习记录保持。</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction disabled={!clusters || shown !== t} onClick={() => {
                 if (!clusters) return
-                try { recluster(state, clusters); toast.success('已按当前阈值重新分组') }
+                try {
+                  const undo = recluster(state, clusters)
+                  toast.success('已按当前阈值重新分组', { description: '手动形近组、近义关系与学习记录保持不变。', duration: 10000, action: { label: '撤销', onClick: undo } })
+                }
                 catch (error) { toast.error(error instanceof Error ? error.message : '重新分组未完成') }
               }}>重新分组</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
@@ -621,7 +624,7 @@ export default function Settings({
       <h3 className="settings-category">单词释义</h3>
       <DictProviderCard />
 
-      <h3 className="settings-category">数据与备份</h3>
+      <h3 className="settings-category">数据</h3>
       {/* data */}
       <div
         data-guide="backup" className="settings-card"

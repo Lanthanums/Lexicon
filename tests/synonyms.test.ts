@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { sensesFor, verifySynonyms, type SynonymShard } from '../src/lib/synonyms'
+import { createSynonymVerifier, sensesFor, verifySynonyms, type SynonymShard } from '../src/lib/synonyms'
 
 function shard(letter: string): SynonymShard {
   return JSON.parse(readFileSync(new URL(`../public/wordnet/${letter}.json`, import.meta.url), 'utf8'))
@@ -69,4 +69,29 @@ test('empty, failed, invalid and cancelled API calls never produce approval', as
   await assert.rejects(verifySynonyms('serene', '', signal, (async () => new Response('{"error":"quota"}')) as typeof fetch))
   const cancelled = new AbortController(); cancelled.abort()
   await assert.rejects(verifySynonyms('serene', '', cancelled.signal, (async (_url, options) => { options?.signal?.throwIfAborted(); return new Response('[]') }) as typeof fetch))
+})
+
+test('a batch verifier shares requests per lemma and fails fast after the service fails', async () => {
+  const calls: string[] = []
+  const batch = new AbortController()
+  const ok = createSynonymVerifier('', batch.signal, (async (url: string) => {
+    calls.push(new URL(new URL(url, 'https://app.example').searchParams.get('url')!).searchParams.get('rel_syn')!)
+    return new Response(JSON.stringify([{ word: 'calm' }]))
+  }) as typeof fetch)
+  const [first, second] = await Promise.all([ok.verify('Serene'), ok.verify('serene')])
+  assert.equal(first, second)
+  await ok.verify('serene')
+  assert.deepEqual(calls, ['serene'])
+
+  let requests = 0
+  const down = createSynonymVerifier('', batch.signal, (async () => { requests++; return new Response('', { status: 503 }) }) as typeof fetch)
+  await assert.rejects(down.verify('serene'), /暂时不可用/)
+  await assert.rejects(down.verify('tranquil'), /暂时不可用/)
+  assert.equal(requests, 1)
+
+  const waiting = createSynonymVerifier('', batch.signal, (() => new Promise(() => {})) as typeof fetch)
+  const caller = new AbortController()
+  const pending = waiting.verify('serene', caller.signal)
+  caller.abort()
+  await assert.rejects(pending)
 })

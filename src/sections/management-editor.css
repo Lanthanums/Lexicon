@@ -235,3 +235,6 @@
     transform: none;
   }
 }
+
+/* Field labels are medium weight; what the person types is not. */
+.management-word-fields :is(input, textarea) { font-weight: 400; }

@@ -30,42 +30,40 @@ export function indexEntryWords(state: LibraryState): Map<string, Word> {
 }
 
 export type EntryInput=Omit<Word,'id'|'groupId'|'addedAt'>
-export function insertPlanned(draft:LibraryState,input:EntryInput,plan:EntryPlan,shapeId:string,nearId:string,id:string,now:number,date:string,words=indexEntryWords(draft)){
+export function insertPlanned(draft:LibraryState,input:EntryInput,plan:EntryPlan,shapeId:string,id:string,now:number,date:string,words=indexEntryWords(draft)){
   const existing=words.get(normalizeEntryText(input.text))
   if(existing)return {id:existing.id,duplicate:true,shape:false,near:false}
-  const option=plan.near.find(item=>item.id===nearId), gid=shapeId || 'single-'+id
+  const gid=shapeId || 'single-'+id
   if(shapeId && !draft.groups[shapeId])throw new Error('词库已发生变化，请重新确认归组')
-  const source = option?.moveFrom
-  if (source && JSON.stringify(draft.synonymSets[source.id]) !== JSON.stringify(source)) {
-    throw new Error('原近义组已发生变化，请重新确认')
+  for (const option of plan.near) {
+    const group = option.groupId ? draft.synonymSets[option.groupId] : undefined
+    if (option.ids.some(wid => !draft.words[wid]) || (option.groupId &&
+        (!group || group.wordIds.length !== option.ids.length || group.wordIds.some(wid => !option.ids.includes(wid))))) {
+      throw new Error('近义组已发生变化，请重试录入')
+    }
   }
-  if (option) {
-    const selected = new Set(option.ids)
-    const conflict = Object.values(draft.synonymSets).some(group =>
-      group.id !== option.groupId && group.id !== source?.id && group.wordIds.some(wid => selected.has(wid)))
-    if (conflict || option.ids.some(wid => !draft.words[wid])) throw new Error('近义组已发生变化，请重新确认')
-  }
-  if(option?.groupId && (!draft.synonymSets[option.groupId] || draft.synonymSets[option.groupId].wordIds.some(wid=>!option.ids.includes(wid))))throw new Error('近义组已发生变化，请重新确认')
   draft.words[id]={...input,id,groupId:gid,addedAt:now}
   words.set(normalizeEntryText(input.text), draft.words[id])
   draft.groups[gid]??={id:gid,wordIds:[],manual:false,createdAt:now}
   draft.groups[gid].wordIds.push(id)
-  if(option){
-    if (source) {
-      const remaining = source.wordIds.filter(wid => !option.ids.includes(wid))
-      if (remaining.length >= 2) {
-        draft.synonymSets[source.id] = {...source, wordIds:remaining}
-      } else {
-        (draft.relationArchive ??= []).push(source)
-        delete draft.synonymSets[source.id]
-      }
+  let newGroupCount = 0
+  for (const option of plan.near) {
+    if (option.groupId) {
+      const group = draft.synonymSets[option.groupId]
+      group.wordIds = [...new Set([...group.wordIds, id])]
+      continue
     }
-    const sid=option.groupId || 'near-'+id, prior=draft.synonymSets[sid]
-    draft.synonymSets[sid]=prior ? {...prior,wordIds:[...new Set([...prior.wordIds,...option.ids,id])]} :
-      {id:sid,name:coreGloss(input.gloss),nameSource:'auto',notes:'',provenance:option.note,wordIds:[...option.ids,id],createdAt:now}
+    const prefix = 'near-' + id
+    let sid: string
+    do {
+      newGroupCount++
+      sid = newGroupCount === 1 ? prefix : `${prefix}-${newGroupCount}`
+    } while (Object.hasOwn(draft.synonymSets, sid))
+    const name = option.ids.map(wid => coreGloss(draft.words[wid].gloss)).find(Boolean) || coreGloss(input.gloss)
+    draft.synonymSets[sid] = {id:sid,name,nameSource:'auto',notes:'',provenance:option.note,wordIds:[...option.ids,id],createdAt:now}
   }
   const activity=draft.activity[date]??{added:0,reviewed:0}
   draft.activity[date]={...activity,added:activity.added+1}
   if(draft.learning.enabled)draft.learning.addCount++
-  return {id,duplicate:false,shape:!!shapeId,near:!!option}
+  return {id,duplicate:false,shape:!!shapeId,near:plan.near.length > 0}
 }

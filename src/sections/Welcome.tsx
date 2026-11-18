@@ -216,6 +216,10 @@ export default function Welcome({
     () => Object.values(state.words).some((w) => w.text === daily.word),
     [state.words, daily.word],
   )
+  const sameText = (a: string, b: string) => a.replace(/[\s，,；;。]/g, '') === b.replace(/[\s，,；;。]/g, '')
+  const libraryMeanings = daily.libWord?.meanings.filter(m => (m.zh || m.en).trim()) ?? []
+  const libraryLead = libraryMeanings.find(m => sameText(m.zh || m.en, daily.libWord?.gloss ?? ''))
+  const libraryExtra = libraryMeanings.filter(m => m !== libraryLead)
 
   /* ---- daily card height cap: 80% of the calendar card ---- */
   const calRef = useRef<HTMLDivElement>(null)
@@ -259,6 +263,7 @@ export default function Welcome({
     }
     return set
   }, [state])
+  const addedDays = useMemo(() => new Set(Object.entries(state.activity).filter(([, v]) => v.added > 0).map(([k]) => k)), [state.activity])
 
 
   return (
@@ -346,10 +351,18 @@ export default function Welcome({
                 {daily.source === 'library' && daily.libWord ? (
                   /* offline fallback — Chinese gloss allowed here */
                   <>
-                    <p className="mt-2 text-base">{daily.libWord.gloss}</p>
-                    {daily.libWord.meanings.length > 0 && (
+                    {/* A meaning that only repeats the gloss lends its part of speech to the gloss line. */}
+                    <p className="mt-2 text-base">
+                      {libraryLead?.pos && (
+                        <span className="mr-2 inline-block rounded bg-secondary px-1.5 py-0.5 align-[1px] text-xs text-secondary-foreground">
+                          {libraryLead.pos}
+                        </span>
+                      )}
+                      {daily.libWord.gloss}
+                    </p>
+                    {libraryExtra.length > 0 && (
                       <ul className="mt-3 space-y-1.5 border-t border-border/60 pt-3">
-                        {daily.libWord.meanings.slice(0, 3).map((m, i) => (
+                        {libraryExtra.slice(0, 3).map((m, i) => (
                           <li
                             key={i}
                             className="text-sm leading-relaxed text-muted-foreground"
@@ -476,7 +489,7 @@ export default function Welcome({
               </p>
             </div>
           </div>
-          <MiniCalendar now={now} reviewedDays={reviewedDays} />
+          <MiniCalendar now={now} reviewedDays={reviewedDays} addedDays={addedDays} />
           <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
             {wordCount > 0
               ? `词库里已有 ${wordCount} 个词，今天也积累一点吧。`
@@ -518,9 +531,11 @@ export default function Welcome({
 function MiniCalendar({
   now,
   reviewedDays,
+  addedDays,
 }: {
   now: Date
   reviewedDays: Set<string>
+  addedDays: Set<string>
 }) {
   const year = now.getFullYear()
   const month = now.getMonth()
@@ -540,8 +555,9 @@ function MiniCalendar({
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {cells.map((d, i) => {
-          const reviewed =
-            d !== null && reviewedDays.has(dayKey(new Date(year, month, d)))
+          const key = d === null ? '' : dayKey(new Date(year, month, d))
+          const reviewed = d !== null && reviewedDays.has(key)
+          const added = d !== null && addedDays.has(key)
           return (
             <span
               key={i}
@@ -554,6 +570,12 @@ function MiniCalendar({
               }`}
             >
               {d ?? ''}
+              {added && (
+                <span
+                  aria-label="当天有录入"
+                  className={`absolute bottom-[14%] size-1 rounded-full ${d === today ? 'bg-primary-foreground' : 'bg-primary/70'}`}
+                />
+              )}
               {reviewed && (
                 <svg
                   viewBox="0 0 8 8"
@@ -574,6 +596,12 @@ function MiniCalendar({
           )
         })}
       </div>
+      {cells.some(d => d !== null && (addedDays.has(dayKey(new Date(year, month, d))) || reviewedDays.has(dayKey(new Date(year, month, d))))) && (
+        <p className="mt-2 flex items-center justify-end gap-3 text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><span className="size-1 rounded-full bg-primary/70" />有录入</span>
+          <span className="inline-flex items-center gap-1"><svg viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="size-2 text-emerald-600" aria-hidden="true"><path d="M1.5 4.2l1.8 1.8L6.8 2" /></svg>有复习</span>
+        </p>
+      )}
     </div>
   )
 }

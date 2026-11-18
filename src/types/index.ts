@@ -110,6 +110,7 @@ export interface LibraryState {
 export interface SynonymSet {
   provenance?: string
   nameSource?: 'auto' | 'manual'
+  /** Retained when reading historical backups. Dragging now chooses the type before saving. */
   pendingTypeChoice?: boolean
   id: string
   name: string

@@ -8,9 +8,9 @@ export function markTourDone(completed = true) { try { localStorage.setItem(KEY,
 export type GuidePage = 'today' | 'manage' | 'quiz' | 'settings'
 export const GUIDE_STEPS = [
   { id:'overview', title:'先认识你的词汇空间', text:'四个分块，串起收藏、整理、回忆和保存。接下来只练几个容易错过的小技巧。' },
-  { id:'word', title:'拖动一个词，只移动这个成员', text:'把 scout 拖进 stout / spout 的形近组。拖住单词本身即可；其他成员留在原处。' },
-  { id:'card', title:'拖动卡片空白处，合并整组', text:'把 adapt / adopt 整张卡片拖向 accept / receive。不同类型相遇时先成为自定义组，之后可以再选类型。合并后可在提示里撤销。' },
-  { id:'sort', title:'长按三横线，再拖动排序', text:'在编辑器里，按住 stout 左侧的三横线约一瞬，再拖到下一行。也可以聚焦手柄，用上下方向键调整。' },
+  { id:'word', title:'拖动一个词，松手前选择关系', text:'把 scout 拖到 stout / spout 卡片的左侧「形近组」区域，松手加入该组。' },
+  { id:'card', title:'拖动卡片空白处，合并整组', text:'把 adapt / adopt 整张卡片拖到 accept / receive 卡片的右侧「自定义组」区域，松手合并。合并后可撤销。' },
+  { id:'sort', title:'拖动三横线，调整顺序', text:'在编辑器里，按住 stout 左侧的三横线，直接拖到下一行。也可以聚焦手柄，用上下方向键调整。' },
   { id:'mastery', title:'五个点，也藏着一个滑条', text:'点击 stout 右侧的五个点，再滑动调整熟练度。正常使用时，保存编辑才生效；手动调整不会增加答题次数。' },
   { id:'finish', title:'可以开始自己的积累了', text:'教学练习会随退出丢弃。以后想重看，从设置里的「互动使用教学」重新打开即可。' },
 ] as const
